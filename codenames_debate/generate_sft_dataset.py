@@ -1,16 +1,14 @@
 import json
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import openai
 import typer
-
 from tqdm import tqdm
 
-from .generate_game import generate_game, Game
+from .generate_game import Game, generate_game
 
-openai.api_key_path = "openai_api_key.txt"
+openai.api_key_path = "openai-api-key.txt"
 
 PROMPT = """\
 Please help me give a CodeNames hint. \
@@ -32,7 +30,9 @@ def gen_sample(game: Game | None = None) -> str:
     return f"{game}\nHint: {hint}"
 
 
-def main(output_file: str = "sft_hint_dataset.json", num_samples: int = 100):
+def main(
+    output_file: str = "codenames_debate/sft_hint_dataset.jsonl", num_samples: int = 100
+):
     with ThreadPoolExecutor(max_workers=5) as ex:
         tasks = [ex.submit(gen_sample) for _ in range(num_samples)]
         samples = [
@@ -41,7 +41,9 @@ def main(output_file: str = "sft_hint_dataset.json", num_samples: int = 100):
                 as_completed(tasks), total=num_samples, desc="Generating samples"
             )
         ]
-        Path(output_file).write_text(json.dumps({"text": samples}, indent=2))
+        Path(output_file).write_text(
+            "\n".join(json.dumps({"text": sample}) for sample in samples)
+        )
 
 
 if __name__ == "__main__":

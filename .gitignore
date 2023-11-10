@@ -1,4 +1,9 @@
 .venv
 .vscode
 __pycache__
-openai_api_key.txt
+openai-api-key.txt
+codenames-debate.pem
+huggingface-token.txt
+copy_project_to_lambda_labs.sh
+ssh_lambda_labs.sh
+.python-version
