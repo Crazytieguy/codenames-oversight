@@ -2,13 +2,13 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import openai
 import typer
+from openai import OpenAI
 from tqdm import tqdm
 
 from .generate_game import Game, generate_game
 
-openai.api_key_path = "openai-api-key.txt"
+openai_client = OpenAI(api_key=Path("openai-api-key.txt").read_text().strip())
 
 PROMPT = """\
 Please help me give a CodeNames hint. \
@@ -23,27 +23,26 @@ def gen_sample(game: Game | None = None) -> str:
     if game is None:
         game = generate_game()
     prompt = PROMPT.format(game=str(game))
-    chat_completion = openai.ChatCompletion.create(
+    chat_completion = openai_client.chat.completions.create(
         model="gpt-4", messages=[{"role": "user", "content": prompt}]
     )
-    hint = chat_completion.choices[0].message.content.strip('"').title()  # type: ignore
+    hint = chat_completion.choices[0].message.content.strip("\"' \n").title()  # type: ignore
     return f"{game}\nHint: {hint}"
 
 
 def main(
-    output_file: str = "codenames_debate/sft_hint_dataset.jsonl", num_samples: int = 100
+    output_file: str = "codenames_debate/sft_hint_dataset.jsonl",
+    num_samples: int = 100,
+    concurrency: int = 3,
 ):
-    with ThreadPoolExecutor(max_workers=5) as ex:
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
         tasks = [ex.submit(gen_sample) for _ in range(num_samples)]
-        samples = [
-            task.result()
-            for task in tqdm(
-                as_completed(tasks), total=num_samples, desc="Generating samples"
-            )
-        ]
-        Path(output_file).write_text(
-            "\n".join(json.dumps({"text": sample}) for sample in samples)
-        )
+        for task in tqdm(
+            as_completed(tasks), total=num_samples, desc="Generating samples"
+        ):
+            sample = task.result()
+            with Path(output_file).open("a") as f:
+                f.write(json.dumps({"text": sample}) + "\n")
 
 
 if __name__ == "__main__":
