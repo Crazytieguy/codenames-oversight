@@ -6,7 +6,7 @@ import typer
 from openai import OpenAI
 from tqdm import tqdm
 
-from .generate_game import Game, generate_game
+from .game import Game, generate_game
 
 openai_client = OpenAI(api_key=Path("openai-api-key.txt").read_text().strip())
 
