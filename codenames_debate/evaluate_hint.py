@@ -1,30 +1,30 @@
 import json
+import logging
 from pathlib import Path
+from threading import Lock
 
 from openai import OpenAI
 
 from .game import Game
 
-openai_client = OpenAI(api_key=Path("openai-api-key.txt").read_text().strip())
+openai_client = OpenAI()
 
-SYSTEM_MESSAGE = "You are an expert CodeNames player. You always think through your guesses step by step."
+SYSTEM_MESSAGE = "You are a smart and helpful English professor."
 FIRST_PROMPT = """\
-Let's play CodeNames!
+Let's play a word game!
 
-In this version of CodeNames, I will give you 6 words and a hint, and you need to classify EXACTLY 3 words as green and EXACTLY 3 as red. The hint is meant to point you to the green words and away from the red words. Note that you should guess all of the words simultaneously.
+I will give you 6 words and a hint. Out of the  words, three are 'green' words and three are 'red' words. The hint is meant to point you to the green words and away from the red words. You need to classify EXACTLY three words as green and EXACTLY three as red, and you will get points based on how many you get right.
 
 Words: {words}
 Hint: {hint}
-
-Let's verify step by step.
 """
-SECOND_PROMPT = "Great! Now deliver your final answer."
+SECOND_PROMPT = "Great! now submit your final guess"
 
 
-deliver_final_answer_schema = {
+submit_final_guess_schema = {
     "type": "function",
     "function": {
-        "name": "deliver_final_answer",
+        "name": "submit_final_guess",
         "parameters": {
             "type": "object",
             "properties": {
@@ -45,11 +45,13 @@ deliver_final_answer_schema = {
     },
 }
 
+log_file_lock = Lock()
 
-def evaluate_hint(game: Game, hint: str) -> int:
+
+def evaluate_hint(game: Game, hint: str) -> float:
     words = game.words()
 
-    prompt = FIRST_PROMPT.format(words=words, hint=hint)
+    prompt = FIRST_PROMPT.format(words=", ".join(words), hint=hint)
     messages = [
         {"role": "system", "content": SYSTEM_MESSAGE},
         {"role": "user", "content": prompt},
@@ -66,12 +68,37 @@ def evaluate_hint(game: Game, hint: str) -> int:
     chat_completion = openai_client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=messages,
-        tool_choice={"type": "function", "function": {"name": "deliver_final_answer"}},
-        tools=[deliver_final_answer_schema],
+        tool_choice={"type": "function", "function": {"name": "submit_final_guess"}},
+        tools=[submit_final_guess_schema],
     )
-    answer = json.loads(
-        chat_completion.choices[0].message.tool_calls[0].function.arguments
-    )
+
+    messages.append(chat_completion.choices[0].message)
+    try:
+        answer = json.loads(messages[-1].tool_calls[0].function.arguments)
+    except json.decoder.JSONDecodeError:
+        print(f"{messages=}")
+        raise
+    finally:
+        with log_file_lock, Path("codenames_debate/hint_evaluation_log.jsonl").open(
+            "a"
+        ) as f:
+            serializable_messages = [
+                message if isinstance(message, dict) else message.model_dump()
+                for message in messages
+            ]
+            f.write(
+                json.dumps(
+                    {"game": game.model_dump(), "messages": serializable_messages}
+                )
+                + "\n"
+            )
+
+    if len(answer["green_words"]) != 3 or len(answer["red_words"]) != 3:
+        logging.warning(
+            f"Invalid hint evaluation for {game.good_words=}, {game.bad_words=}, {hint=}.\n"
+            f"Got {answer['green_words']=}, {answer['red_words']=}"
+        )
+
     correct_good_words = set(answer["green_words"]).intersection(game.good_words)
     correct_bad_words = set(answer["red_words"]).intersection(game.bad_words)
-    return len(correct_good_words) + len(correct_bad_words)
+    return float(len(correct_good_words) + len(correct_bad_words))
