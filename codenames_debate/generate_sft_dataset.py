@@ -4,30 +4,55 @@ from pathlib import Path
 
 import typer
 from openai import OpenAI
+from openai.types.chat import ChatCompletionToolParam
 from tqdm import tqdm
 
-from .game import Game, generate_game
+from .game import generate_game
 
-openai_client = OpenAI(api_key=Path("openai-api-key.txt").read_text().strip())
+openai_client = OpenAI()
 
+SYSTEM_MESSAGE = "You are an expert CodeNames player."
 PROMPT = """\
-Please help me give a CodeNames hint. \
-The hint should be just one word, \
-and allow another player to guess as many good words \
-and as few bad words as possible.
+Let's play CodeNames!
 
-{game}"""
+{game}
+
+Please give a clue for the blue team. \
+The clue is a single word, followed by a number. \
+The number is the number of blue words that the clue applies to. \
+Make sure your clue is not associated with any of the red words, \
+and most importantly the black word."""
+
+SUBMIT_CLUE_SCHEMA: ChatCompletionToolParam = {
+    "type": "function",
+    "function": {
+        "name": "submit_clue",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "one_word_clue": {"type": "string"},
+                "num_words": {"type": "integer"},
+            },
+        },
+    },
+}
 
 
-def gen_sample(game: Game | None = None) -> str:
-    if game is None:
-        game = generate_game()
+def gen_sample() -> dict:
+    game = generate_game()
     prompt = PROMPT.format(game=str(game))
     chat_completion = openai_client.chat.completions.create(
-        model="gpt-4", messages=[{"role": "user", "content": prompt}]
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": SYSTEM_MESSAGE},
+            {"role": "user", "content": prompt},
+        ],
+        tool_choice={"type": "function", "function": {"name": "submit_clue"}},
+        tools=[SUBMIT_CLUE_SCHEMA],
     )
-    hint = chat_completion.choices[0].message.content.strip("\"' \n").title()  # type: ignore
-    return f"{game}\nHint: {hint}"
+    clue = chat_completion.choices[0].message.tool_calls[0].function.arguments  # type: ignore
+
+    return {"game": game.model_dump(), "clue": json.loads(clue)}
 
 
 def main(
@@ -35,14 +60,15 @@ def main(
     num_samples: int = 100,
     concurrency: int = 3,
 ):
-    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+    with Path(output_file).open("a") as f, ThreadPoolExecutor(
+        max_workers=concurrency
+    ) as ex:
         tasks = [ex.submit(gen_sample) for _ in range(num_samples)]
         for task in tqdm(
             as_completed(tasks), total=num_samples, desc="Generating samples"
         ):
             sample = task.result()
-            with Path(output_file).open("a") as f:
-                f.write(json.dumps({"text": sample}) + "\n")
+            f.write(json.dumps(sample) + "\n")
 
 
 if __name__ == "__main__":

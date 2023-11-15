@@ -1,13 +1,15 @@
 import torch
 import typer
 from accelerate import Accelerator
-from peft import PeftModel
+from peft import PeftModel  # type: ignore
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
 )
 from trl import is_xpu_available
+
+from .game import generate_game
 
 
 def main():
@@ -29,14 +31,16 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
 
-    prompt = "Good words: DOCTOR, RAY, PARK\nBad words: KID, LOG, NIGHT\nHint:"
-    with torch.no_grad():
+    games = [generate_game() for _ in range(10)]
+    for game in games:
+        prompt = f"{game}\n\nClue:"
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(model.device)
         outputs = model.generate(input_ids=input_ids, max_new_tokens=10)
         output_text = tokenizer.batch_decode(
-            outputs.detach().cpu().numpy(), skip_special_tokens=True
+            outputs.detach().cpu().numpy(),  # type: ignore
+            skip_special_tokens=True,
         )[0]
-        print(output_text)
+        print(output_text, end="\n\n")
 
 
 if __name__ == "__main__":

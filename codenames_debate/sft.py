@@ -6,7 +6,8 @@ import torch
 import typer
 from accelerate import Accelerator
 from datasets import load_dataset
-from peft import LoraConfig
+from peft import LoraConfig  # type: ignore
+from pydantic import BaseModel
 from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
@@ -16,7 +17,26 @@ from transformers import (
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer, is_xpu_available
 
+from .game import Game
+
 tqdm.pandas()
+
+
+class DatasetClue(BaseModel):
+    one_word_clue: str
+    num_words: int
+
+
+class DatasetSample(BaseModel):
+    game: Game
+    clue: DatasetClue
+
+
+def format_prompt(example_raw: dict) -> dict:
+    example = DatasetSample.model_validate(example_raw)
+    clue_word = example.clue.one_word_clue.title()
+    clue_num = example.clue.num_words
+    return {"text": f"{example.game}\n\nClue: {clue_word}, {clue_num}"}
 
 
 def main(
@@ -25,7 +45,7 @@ def main(
 ):
     dataset = load_dataset(
         "json", data_files="codenames_debate/sft_hint_dataset.jsonl", split="train"
-    )
+    ).map(format_prompt, batched=False)
 
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
     device_map = (
@@ -43,13 +63,13 @@ def main(
 
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=8,
+        per_device_train_batch_size=2,  # critical for memory usage
         gradient_accumulation_steps=1,
-        learning_rate=2e-4,
+        learning_rate=1e-4,
         logging_steps=1,
         num_train_epochs=1,
         max_steps=-1,
-        report_to="none",
+        report_to="none",  # type: ignore
         save_steps=100,
         save_total_limit=10,
     )
@@ -68,12 +88,11 @@ def main(
     # I don't expect to need the token '~'
     tokenizer.add_special_tokens({"pad_token": "~"})
 
-    response_template = "\nHint:"
+    response_template = "\n\nClue:"
     # skip '<s>' and '▁'
     response_template_ids = tokenizer.encode(
         response_template, add_special_tokens=False
     )[2:]
-
     data_collator = DataCollatorForCompletionOnlyLM(
         response_template_ids, tokenizer=tokenizer
     )
@@ -83,12 +102,13 @@ def main(
         tokenizer=tokenizer,
         data_collator=data_collator,
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=dataset,  # type: ignore
         dataset_text_field="text",
+        max_seq_length=256,
         peft_config=peft_config,
     )
 
-    trainer.train()
+    trainer.train()  # type: ignore
     trainer.save_model(output_dir)
 
 
