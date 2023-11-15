@@ -20,6 +20,23 @@ White words: {', '.join(self.white_words)}
 Black word: {self.black_word}"""
 
 
+class Clue(BaseModel):
+    one_word_clue: str
+    num_words: int
+
+
+class SFTSample(BaseModel):
+    game: Game
+    clue: Clue
+
+
+class Evaluation(BaseModel):
+    game: Game
+    clue: Clue
+    reward: float
+    guesses: list[str]
+
+
 def generate_game() -> Game:
     words = random.sample(WORDS, 25)
     blue_words, red_words, white_words, [black_word] = (

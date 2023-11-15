@@ -7,7 +7,6 @@ import typer
 from accelerate import Accelerator
 from datasets import load_dataset
 from peft import LoraConfig  # type: ignore
-from pydantic import BaseModel
 from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
@@ -17,23 +16,13 @@ from transformers import (
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer, is_xpu_available
 
-from .game import Game
+from .models import SFTSample
 
 tqdm.pandas()
 
 
-class DatasetClue(BaseModel):
-    one_word_clue: str
-    num_words: int
-
-
-class DatasetSample(BaseModel):
-    game: Game
-    clue: DatasetClue
-
-
 def format_prompt(example_raw: dict) -> dict:
-    example = DatasetSample.model_validate(example_raw)
+    example = SFTSample.model_validate(example_raw)
     clue_word = example.clue.one_word_clue.title()
     clue_num = example.clue.num_words
     return {"text": f"{example.game}\n\nClue: {clue_word}, {clue_num}"}

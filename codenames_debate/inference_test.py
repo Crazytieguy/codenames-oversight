@@ -9,7 +9,7 @@ from transformers import (
 )
 from trl import is_xpu_available
 
-from .game import generate_game
+from .models import generate_game
 
 
 def main():

@@ -7,7 +7,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionToolParam
 from tqdm import tqdm
 
-from .game import generate_game
+from .models import SFTSample, generate_game
 
 openai_client = OpenAI()
 
@@ -38,7 +38,7 @@ SUBMIT_CLUE_SCHEMA: ChatCompletionToolParam = {
 }
 
 
-def gen_sample() -> dict:
+def gen_sample() -> SFTSample:
     game = generate_game()
     prompt = PROMPT.format(game=str(game))
     chat_completion = openai_client.chat.completions.create(
@@ -52,7 +52,7 @@ def gen_sample() -> dict:
     )
     clue = chat_completion.choices[0].message.tool_calls[0].function.arguments  # type: ignore
 
-    return {"game": game.model_dump(), "clue": json.loads(clue)}
+    return SFTSample(game=game, clue=json.loads(clue))
 
 
 def main(
@@ -68,7 +68,7 @@ def main(
             as_completed(tasks), total=num_samples, desc="Generating samples"
         ):
             sample = task.result()
-            f.write(json.dumps(sample) + "\n")
+            f.write(sample.model_dump_json() + "\n")
 
 
 if __name__ == "__main__":

@@ -18,8 +18,8 @@ from trl import (
     set_seed,
 )
 
-from .evaluate_hint import evaluate_hint
-from .game import Game
+from .evaluate_clue import evaluate_clue
+from .models import Game
 
 set_seed(0)
 
@@ -97,7 +97,10 @@ def hint_from_response(response: str):
 
 
 def simple_log(
-    training_step: float, queries: Iterable[str], hints: Iterable[str], rewards: Iterable[float]
+    training_step: float,
+    queries: Iterable[str],
+    hints: Iterable[str],
+    rewards: Iterable[float],
 ):
     mean_reward = numpy.mean(rewards)
     with Path("codenames_debate/ppo_simple_log.jsonl").open("a") as f:
@@ -140,7 +143,7 @@ for step_number, batch in tqdm(
     games = [game_by_query[query] for query in batch["query"]]
     hints = list(map(hint_from_response, batch["response"]))
     with ThreadPoolExecutor(max_workers=8) as ex:
-        rewards = ex.map(evaluate_hint, games, hints)
+        rewards = ex.map(evaluate_clue, games, hints)
 
     rewards = [torch.tensor(r) for r in rewards]
     evaluate_time = time.time() - start_evaluate

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from .game import generate_game
+from .models import generate_game
 
 
 def main(
