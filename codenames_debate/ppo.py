@@ -24,29 +24,6 @@ from .models import Clue, Evaluation, Game, ParseError
 logging.basicConfig(level=logging.INFO)
 
 
-def collator(samples: list[dict]) -> dict:
-    return {
-        "query": [s["query"] for s in samples],
-        "input_ids": [torch.tensor(s["input_ids"]) for s in samples],
-    }
-
-
-def parse_clue(response: str) -> Clue | ParseError:
-    try:
-        [clue_word, clue_num] = response.removesuffix("</s>").strip().split(", ")
-        return Clue(one_word_clue=clue_word, num_words=int(clue_num))
-    except Exception:
-        logging.warn(f"Failed to parse clue: {response}")
-        return ParseError(response=response)
-
-
-@contextmanager
-def timer(name: str):
-    start = time.time()
-    yield
-    logging.info(f"{name} took {time.time() - start:.2f}s")
-
-
 def main(
     base_model: str = "meta-llama/Llama-2-7b-hf",
     model_dir: str = "llama-7b-hint-giving-ppo",
@@ -55,6 +32,7 @@ def main(
     evaluation_concurrency: int = 3,
     fresh_start: bool = False,
 ):
+    "Train a fine tuned LLM with PPO to generate better CodeNames clues."
     set_seed(0)
 
     tokenizer = AutoTokenizer.from_pretrained(base_model)
@@ -159,6 +137,29 @@ def main(
 
     finally:
         model.save_pretrained(model_dir)
+
+
+def collator(samples: list[dict]) -> dict:
+    return {
+        "query": [s["query"] for s in samples],
+        "input_ids": [torch.tensor(s["input_ids"]) for s in samples],
+    }
+
+
+def parse_clue(response: str) -> Clue | ParseError:
+    try:
+        [clue_word, clue_num] = response.removesuffix("</s>").strip().split(", ")
+        return Clue(one_word_clue=clue_word, num_words=int(clue_num))
+    except Exception:
+        logging.warn(f"Failed to parse clue: {response}")
+        return ParseError(response=response)
+
+
+@contextmanager
+def timer(name: str):
+    start = time.time()
+    yield
+    logging.info(f"{name} took {time.time() - start:.2f}s")
 
 
 if __name__ == "__main__":

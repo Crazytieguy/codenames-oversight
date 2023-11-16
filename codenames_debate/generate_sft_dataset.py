@@ -38,6 +38,23 @@ SUBMIT_CLUE_SCHEMA: ChatCompletionToolParam = {
 }
 
 
+def main(
+    output_file: str = "codenames_debate/sft_hint_dataset.jsonl",
+    num_samples: int = 100,
+    concurrency: int = 3,
+):
+    "Generate the supervised fine-tuning dataset for clue giving."
+    with Path(output_file).open("a") as f, ThreadPoolExecutor(
+        max_workers=concurrency
+    ) as ex:
+        tasks = [ex.submit(gen_sample) for _ in range(num_samples)]
+        for task in tqdm(
+            as_completed(tasks), total=num_samples, desc="Generating samples"
+        ):
+            sample = task.result()
+            f.write(sample.model_dump_json() + "\n")
+
+
 def gen_sample() -> SFTSample:
     game = generate_game()
     prompt = PROMPT.format(game=str(game))
@@ -53,22 +70,6 @@ def gen_sample() -> SFTSample:
     clue = chat_completion.choices[0].message.tool_calls[0].function.arguments  # type: ignore
 
     return SFTSample(game=game, clue=json.loads(clue))
-
-
-def main(
-    output_file: str = "codenames_debate/sft_hint_dataset.jsonl",
-    num_samples: int = 100,
-    concurrency: int = 3,
-):
-    with Path(output_file).open("a") as f, ThreadPoolExecutor(
-        max_workers=concurrency
-    ) as ex:
-        tasks = [ex.submit(gen_sample) for _ in range(num_samples)]
-        for task in tqdm(
-            as_completed(tasks), total=num_samples, desc="Generating samples"
-        ):
-            sample = task.result()
-            f.write(sample.model_dump_json() + "\n")
 
 
 if __name__ == "__main__":

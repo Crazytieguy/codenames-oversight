@@ -16,6 +16,7 @@ def main(
     base_model: str = "meta-llama/Llama-2-7b-hf",
     model_dir: str = "./llama-7b-hint-giving",
 ):
+    "Run some inferences for some manual validation"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
     device_map = (
         {"": f"xpu:{Accelerator().local_process_index}"}

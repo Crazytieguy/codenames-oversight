@@ -22,26 +22,13 @@ Which one is most closely related to the word "{clue}"? Respond with just this w
 """
 
 
-def compute_reward(game: Game, guesses: list[str]) -> float:
-    # The rest are guaranteed to be blue words
-    last_guess = guesses[-1]
-
-    last_guess_is_blue = last_guess in game.blue_words
-    last_guess_is_red = last_guess in game.red_words
-    last_guess_is_white = last_guess in game.white_words
-    last_guess_is_black = last_guess == game.black_word
-
-    last_guess_reward = {
-        last_guess_is_blue: 0,
-        last_guess_is_white: -0.2,
-        last_guess_is_red: -0.4,
-        last_guess_is_black: -1.0,
-    }[True]
-
-    return len(guesses) * 0.2 + last_guess_reward
-
-
 def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
+    """
+    Code for evaluating CodeNames clues using OpenAI's models.
+    See https://czechgames.com/files/rules/codenames-rules-en.pdf for the rules of the game.
+
+    I've decided not to allow ending the turn prematurely, for simplicity.
+    """
     if isinstance(clue, ParseError):
         return Evaluation(
             game=game,
@@ -66,6 +53,7 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
         game.blue_words + game.red_words + game.white_words + [game.black_word]
     )
     if clue.one_word_clue.upper() in remaining_words:
+        # Invalid clue
         return Evaluation(
             game=game,
             clue=clue,
@@ -139,6 +127,25 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
 
     reward = compute_reward(game, guesses)
     return Evaluation(game=game, clue=clue, reward=reward, guesses=guesses)
+
+
+def compute_reward(game: Game, guesses: list[str]) -> float:
+    # The rest are guaranteed to be blue words
+    last_guess = guesses[-1]
+
+    last_guess_is_blue = last_guess in game.blue_words
+    last_guess_is_red = last_guess in game.red_words
+    last_guess_is_white = last_guess in game.white_words
+    last_guess_is_black = last_guess == game.black_word
+
+    last_guess_reward = {
+        last_guess_is_blue: 0,
+        last_guess_is_white: -0.2,
+        last_guess_is_red: -0.4,
+        last_guess_is_black: -1.0,
+    }[True]
+
+    return len(guesses) * 0.2 + last_guess_reward
 
 
 if __name__ == "__main__":

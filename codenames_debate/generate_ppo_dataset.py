@@ -9,6 +9,7 @@ def main(
     output_file: str = "codenames_debate/ppo_dataset.jsonl",
     num_samples: int = 100,
 ):
+    "Generate random games for PPO training."
     samples = [generate_game().model_dump_json() + "\n" for _ in range(num_samples)]
     with Path(output_file).open("a") as f:
         f.writelines(samples)
