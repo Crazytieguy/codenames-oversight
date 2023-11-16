@@ -35,6 +35,10 @@ A notable challenge was getting reasonable, reliable and inexpensive guesses out
 
 Status: the training code runs smoothly, but the model isn't learning to output better clues. My plan now is to read up on PPO, and try to tune the hyperparameters or add more data.
 
+Here is the moving average of the reward over the training iterations. The window size is 64, which corresponds to 8 mini batches:
+
+![PPO training reward moving average. Not very impressive](ppo_rolling_average_reward.png)
+
 ## Debate Phase (not started)
 
 I will probably only start working on this after getting a significant improvement via RLAIF.
