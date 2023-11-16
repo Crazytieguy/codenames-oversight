@@ -1,13 +1,13 @@
-import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
 
-import numpy
 import torch
+import typer
 from accelerate import Accelerator
-from datasets import load_dataset
+from datasets import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BitsAndBytesConfig
 from trl import (
@@ -19,149 +19,147 @@ from trl import (
 )
 
 from .evaluate_clue import evaluate_clue
-from .models import Game
+from .models import Clue, Evaluation, Game, ParseError
 
-set_seed(0)
-
-quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-
-device_map = (
-    {"": f"xpu:{Accelerator().local_process_index}"}
-    if is_xpu_available()
-    else {"": Accelerator().local_process_index}
-)
-
-peft_model_id = "./llama-7b-hint-giving"
-model = AutoModelForCausalLMWithValueHead.from_pretrained(
-    "./llama-7b-hint-giving",
-    quantization_config=quantization_config,
-    device_map=device_map,
-    torch_dtype=torch.bfloat16,
-)
-# model = PeftModel.from_pretrained(model, peft_model_id)
-
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-tokenizer.pad_token = tokenizer.eos_token
-
-dataset = load_dataset(
-    "json", data_files="codenames_debate/ppo_dataset.jsonl", split="train"
-)
+logging.basicConfig(level=logging.INFO)
 
 
-def prepare_sample(sample):
-    game = Game(**sample)
-    sample["query"] = f"{game}\nHint:"
-    sample["input_ids"] = tokenizer.encode(sample["query"])
-    return sample
+def collator(samples: list[dict]) -> dict:
+    return {
+        "query": [s["query"] for s in samples],
+        "input_ids": [torch.tensor(s["input_ids"]) for s in samples],
+    }
 
 
-dataset = dataset.map(prepare_sample, batched=False)
-
-# the good_words and bad_words are dropped for some reason (maybe because they're lists?),
-# so this mapping will be used to retrieve them during training
-game_by_query = {sample["query"]: Game(**sample) for sample in dataset}
-
-
-def collator(data):
-    return {key: [d[key] for d in data] for key in data[0]}
+def parse_clue(response: str) -> Clue | ParseError:
+    try:
+        [clue_word, clue_num] = response.removesuffix("</s>").strip().split(", ")
+        return Clue(one_word_clue=clue_word, num_words=int(clue_num))
+    except Exception:
+        logging.warn(f"Failed to parse clue: {response}")
+        return ParseError(response=response)
 
 
-ppo_config = PPOConfig(
-    model_name="llama-7b-hint-giving",
-    learning_rate=1e-4,
-    ppo_epochs=1,
-    batch_size=16,
-)
-
-ppo_trainer = PPOTrainer(
-    model=model,
-    config=ppo_config,
-    dataset=dataset,
-    data_collator=collator,
-    tokenizer=tokenizer,
-)
-
-generation_kwargs = {
-    "min_length": -1,  # don't ignore the EOS token (see above)
-    "top_k": 0.0,
-    "top_p": 1.0,
-    "do_sample": True,
-    "pad_token_id": tokenizer.eos_token_id,
-    "max_new_tokens": 10,
-}
+@contextmanager
+def timer(name: str):
+    start = time.time()
+    yield
+    logging.info(f"{name} took {time.time() - start:.2f}s")
 
 
-def hint_from_response(response: str):
-    assert response.endswith(".</s>")
-    return response.removesuffix(".</s>")
-
-
-def simple_log(
-    training_step: float,
-    queries: Iterable[str],
-    hints: Iterable[str],
-    rewards: Iterable[float],
+def main(
+    base_model: str = "meta-llama/Llama-2-7b-hf",
+    model_dir: str = "llama-7b-hint-giving-ppo",
+    dataset_path: Path = Path("codenames_debate/ppo_dataset.jsonl"),
+    ppo_evaluations_log: Path = Path("codenames_debate/ppo_evaluations.jsonl"),
+    evaluation_concurrency: int = 3,
+    fresh_start: bool = False,
 ):
-    mean_reward = numpy.mean(rewards)
-    with Path("codenames_debate/ppo_simple_log.jsonl").open("a") as f:
-        for query, hint, reward in zip(queries, hints, rewards):
-            f.write(
-                json.dumps(
-                    {
-                        "training_step": training_step,
-                        "query": query,
-                        "hint": hint,
-                        "reward": reward,
-                        "mean_reward": mean_reward,
-                    }
-                )
-                + "\n"
-            )
+    set_seed(0)
 
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    tokenizer.pad_token = tokenizer.eos_token
 
-total_generate_time = 0
-total_evaluate_time = 0
-total_ppo_step_time = 0
+    def prepare_sample(game: Game) -> dict:
+        query = f"{game}\n\nClue:"
+        return {
+            "query": query,
+            "input_ids": tokenizer.encode(query),
+        }
 
-for step_number, batch in tqdm(
-    enumerate(ppo_trainer.dataloader), total=128 / 16, desc="Training"
-):
-    query_tensors = [torch.tensor(ids) for ids in batch["input_ids"]]
+    games = [
+        Game.model_validate_json(line) for line in dataset_path.read_text().splitlines()
+    ]
 
-    #### Get response from SFTModel
-    start_generate = time.time()
-    response_tensors = ppo_trainer.generate(
-        query_tensors, return_prompt=False, **generation_kwargs
+    resuming = not fresh_start and ppo_evaluations_log.exists()
+
+    if resuming:
+        evaluations = [
+            Evaluation.model_validate_json(line)
+            for line in ppo_evaluations_log.read_text().splitlines()
+        ]
+        game_strs_trained = {str(e.game) for e in evaluations}
+        games = [game for game in games if str(game) not in game_strs_trained]
+        logging.info(f"Resuming training, skipping {len(game_strs_trained)} games")
+
+    samples = [prepare_sample(game) for game in games]
+
+    # the games can't be inside the dataset, so keeping them separately
+    game_by_query = {sample["query"]: game for game, sample in zip(games, samples)}
+    dataset = Dataset.from_list(samples)
+
+    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+    device_map = (
+        {"": f"xpu:{Accelerator().local_process_index}"}
+        if is_xpu_available()
+        else {"": Accelerator().local_process_index}
     )
-    batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
-    generate_time = time.time() - start_generate
-    total_generate_time += generate_time
-    print(f"{generate_time=}")
+    model = AutoModelForCausalLMWithValueHead.from_pretrained(
+        f"./{model_dir}",
+        quantization_config=quantization_config,
+        device_map=device_map,
+        torch_dtype=torch.bfloat16,
+    )
 
-    #### Evaluate response
-    start_evaluate = time.time()
-    games = [game_by_query[query] for query in batch["query"]]
-    hints = list(map(hint_from_response, batch["response"]))
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        rewards = ex.map(evaluate_clue, games, hints)
+    ppo_config = PPOConfig(
+        learning_rate=1e-4,
+        ppo_epochs=1,
+        batch_size=8,
+    )
 
-    rewards = [torch.tensor(r) for r in rewards]
-    evaluate_time = time.time() - start_evaluate
-    total_evaluate_time += evaluate_time
-    print(f"{evaluate_time=}")
+    ppo_trainer = PPOTrainer(
+        model=model,
+        config=ppo_config,
+        dataset=dataset,
+        data_collator=collator,
+        tokenizer=tokenizer,
+    )
 
-    #### Run PPO step
-    start_ppo_step = time.time()
-    stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
-    ppo_trainer.log_stats(stats, batch, rewards)
-    ppo_step_time = time.time() - start_ppo_step
-    total_ppo_step_time += ppo_step_time
-    print(f"{ppo_step_time=}")
+    generation_kwargs = {
+        "min_length": -1,
+        "top_k": 0.0,
+        "top_p": 1.0,
+        "do_sample": True,
+        "pad_token_id": tokenizer.eos_token_id,
+        "max_new_tokens": 10,
+    }
 
-    simple_log(step_number, batch["query"], hints, [r.item() for r in rewards])
-    print(f"{total_generate_time=}")
-    print(f"{total_evaluate_time=}")
-    print(f"{total_ppo_step_time=}")
-    print(f"Step {step_number}: mean(rewards)={numpy.mean(rewards)}")
+    try:
+        for batch in tqdm(
+            ppo_trainer.dataloader,  # type: ignore
+            total=len(dataset) / ppo_config.batch_size,
+            desc="Training",
+        ):
+            with timer("generation"):
+                response_tensors = ppo_trainer.generate(
+                    batch["input_ids"], return_prompt=False, **generation_kwargs
+                )
+                responses = [tokenizer.decode(r.squeeze()) for r in response_tensors]  # type: ignore
 
-model.save_pretrained("llama-7b-hint-giving-ppo")
+            with timer("evaluation"):
+                games = [game_by_query[query] for query in batch["query"]]  # type: ignore
+                clues = list(map(parse_clue, responses))
+                with ThreadPoolExecutor(max_workers=evaluation_concurrency) as ex:
+                    evaluations = list(ex.map(evaluate_clue, games, clues))
+
+                rewards = [torch.tensor(e.reward) for e in evaluations]
+
+            with timer("ppo step"):
+                ppo_trainer.step(
+                    batch["input_ids"],
+                    response_tensors,  # type: ignore
+                    rewards,  # type: ignore
+                )
+
+            logging.info(f"rewards={[e.reward for e in evaluations]}")
+
+            with ppo_evaluations_log.open("a") as f:
+                for evaluation in evaluations:
+                    f.write(evaluation.model_dump_json() + "\n")
+
+    finally:
+        model.save_pretrained(model_dir)
+
+
+if __name__ == "__main__":
+    typer.run(main)

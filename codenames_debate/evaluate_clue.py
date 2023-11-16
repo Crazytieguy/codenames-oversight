@@ -1,13 +1,17 @@
 import itertools
+import logging
 import random
 
 import tiktoken
 from openai import OpenAI
 
-from .models import Clue, Evaluation, Game
+from .models import Clue, Evaluation, EvaluationError, Game, ParseError
 
 openai_client = OpenAI()
-gpt_tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
+openai_tokenizers = {
+    "gpt-3.5-turbo": tiktoken.encoding_for_model("gpt-3.5-turbo"),
+    "gpt-4": tiktoken.encoding_for_model("gpt-4"),
+}
 
 PROMPT = """\
 Here is a list of words:
@@ -29,18 +33,46 @@ def compute_reward(game: Game, guesses: list[str]) -> float:
 
     last_guess_reward = {
         last_guess_is_blue: 0,
-        last_guess_is_white: -1,
-        last_guess_is_red: -2,
-        last_guess_is_black: -9,
+        last_guess_is_white: -0.2,
+        last_guess_is_red: -0.4,
+        last_guess_is_black: -1.0,
     }[True]
 
-    return len(guesses) + last_guess_reward - 1
+    return len(guesses) * 0.2 + last_guess_reward
 
 
-def evaluate_clue(game: Game, clue: Clue) -> Evaluation:
+def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
+    if isinstance(clue, ParseError):
+        return Evaluation(
+            game=game,
+            clue=clue,
+            reward=-1.0,
+            guesses=[],
+        )
+    try:
+        return evaluate_clue_inner(game, clue)
+    except Exception as err:
+        logging.warning(f"Failed to evaluate clue {err=}")
+        return Evaluation(
+            game=game,
+            clue=clue,
+            reward=-0.0,
+            guesses=EvaluationError(reason=repr(err)),
+        )
+
+
+def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
     remaining_words = (
         game.blue_words + game.red_words + game.white_words + [game.black_word]
     )
+    if clue.one_word_clue.upper() in remaining_words:
+        return Evaluation(
+            game=game,
+            clue=clue,
+            reward=-1.0,
+            guesses=[],
+        )
+
     random.shuffle(remaining_words)
 
     guesses = []
@@ -52,6 +84,9 @@ def evaluate_clue(game: Game, clue: Clue) -> Evaluation:
         return len(guesses) < clue.num_words
 
     retry_count = 0
+    model = "gpt-3.5-turbo"
+    # start low, as I've noticed high values can cause a timeout
+    logit_bias = 2.0
 
     while has_guesses_remaining() and (
         is_first_guess() or guesses[-1] in game.blue_words
@@ -61,16 +96,18 @@ def evaluate_clue(game: Game, clue: Clue) -> Evaluation:
             words=" ".join(remaining_words),
         )
 
-        word_tokens = [gpt_tokenizer.encode(word) for word in remaining_words]
+        tokenizer = openai_tokenizers[model]
+        word_tokens = [tokenizer.encode(word) for word in remaining_words]
         allowed_tokens = list(set(itertools.chain.from_iterable(word_tokens)))
 
         chat_completion = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
-            n=1,
-            # This should help guarantee that the model returns a valid guess
-            logit_bias={k: 1 for k in allowed_tokens},  # type: ignore
+            # This should help the model returns a valid guess
+            logit_bias={k: logit_bias for k in allowed_tokens},  # type: ignore
+            temperature=0.0,
             max_tokens=max(len(tokens) for tokens in word_tokens),
+            timeout=10,
         )
 
         guess = chat_completion.choices[0].message.content.strip(" '\"").upper()  # type: ignore
@@ -78,10 +115,22 @@ def evaluate_clue(game: Game, clue: Clue) -> Evaluation:
         guess_is_valid = guess in remaining_words
 
         if not guess_is_valid:
-            if retry_count >= 1:
-                raise ValueError(
-                    f"OpenAI model is returning invalid guesses: {remaining_words=}, {guess=}"
+            if retry_count == 0:
+                logging.warn(
+                    f"GPT-3.5-Turbo returned an invalid guess. Retrying with higher logit bias ({guess=})"
                 )
+                logit_bias = 4.0
+
+            elif retry_count == 1:
+                logging.warn(
+                    f"GPT-3.5-Turbo returned an invalid guess twice. Retrying with GPT-4 ({guess=})"
+                )
+                model = "gpt-4"
+            else:
+                raise ValueError(
+                    f"OpenAI models are returning invalid guesses: {remaining_words=}, {guess=}"
+                )
+
             retry_count += 1
             continue
 

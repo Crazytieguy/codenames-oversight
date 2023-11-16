@@ -12,7 +12,10 @@ from trl import is_xpu_available
 from .models import generate_game
 
 
-def main():
+def main(
+    base_model: str = "meta-llama/Llama-2-7b-hf",
+    model_dir: str = "./llama-7b-hint-giving",
+):
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
     device_map = (
         {"": f"xpu:{Accelerator().local_process_index}"}
@@ -20,16 +23,15 @@ def main():
         else {"": Accelerator().local_process_index}
     )
 
-    peft_model_id = "./llama-7b-hint-giving"
     model = AutoModelForCausalLM.from_pretrained(
-        "meta-llama/Llama-2-7b-hf",
+        base_model,
         quantization_config=quantization_config,
         device_map=device_map,
         torch_dtype=torch.bfloat16,
     )
-    model = PeftModel.from_pretrained(model, peft_model_id)
+    model = PeftModel.from_pretrained(model, model_dir)
 
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
 
     games = [generate_game() for _ in range(10)]
     for game in games:

@@ -30,11 +30,19 @@ class SFTSample(BaseModel):
     clue: Clue
 
 
+class ParseError(BaseModel):
+    response: str
+
+
+class EvaluationError(BaseModel):
+    reason: str
+
+
 class Evaluation(BaseModel):
     game: Game
-    clue: Clue
+    clue: Clue | ParseError
     reward: float
-    guesses: list[str]
+    guesses: list[str] | EvaluationError
 
 
 def generate_game() -> Game:
