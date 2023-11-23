@@ -7,4 +7,3 @@ huggingface-token.txt
 copy_project_to_lambda_labs.sh
 ssh_lambda_labs.sh
 .python-version
-*_dataset.jsonl
