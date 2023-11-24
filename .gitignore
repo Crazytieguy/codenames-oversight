@@ -4,6 +4,4 @@ __pycache__
 openai-api-key.txt
 codenames-debate.pem
 huggingface-token.txt
-copy_project_to_lambda_labs.sh
-ssh_lambda_labs.sh
 .python-version
