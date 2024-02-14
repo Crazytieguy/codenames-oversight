@@ -52,7 +52,7 @@ def main(
 
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=2,  # critical for memory usage
+        per_device_train_batch_size=4,  # critical for memory usage
         gradient_accumulation_steps=1,
         learning_rate=1e-4,
         logging_steps=1,

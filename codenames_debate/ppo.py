@@ -25,11 +25,11 @@ logging.basicConfig(level=logging.INFO)
 
 
 def main(
-    base_model: str = "meta-llama/Llama-2-7b-hf",
-    model_dir: str = "llama-7b-hint-giving-ppo",
+    base_model: str = "meta-llama/Llama-2-13b-hf",
+    model_dir: str = "llama-2-13b-hint-giving-ppo",
     dataset_path: Path = Path("codenames_debate/ppo_dataset.jsonl"),
     ppo_evaluations_log: Path = Path("codenames_debate/ppo_evaluations.jsonl"),
-    evaluation_concurrency: int = 3,
+    evaluation_concurrency: int = 8,
     fresh_start: bool = False,
 ):
     "Train a fine tuned LLM with PPO to generate better CodeNames clues."
@@ -82,7 +82,7 @@ def main(
     ppo_config = PPOConfig(
         learning_rate=1e-4,
         ppo_epochs=1,
-        batch_size=8,
+        batch_size=16,
     )
 
     ppo_trainer = PPOTrainer(

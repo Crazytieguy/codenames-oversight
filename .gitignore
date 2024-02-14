@@ -5,3 +5,4 @@ openai-api-key.txt
 codenames-debate.pem
 huggingface-token.txt
 .python-version
+.env

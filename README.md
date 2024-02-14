@@ -8,7 +8,7 @@ The main goal of this project is to get my feet wet with ML and have some fun wi
 
 ## Fine Tuning Phase (complete)
 
-The goal of this phase is to fine tune an LLM (Llama-2-7b for now) so that it outputs CodeNames clues in the correct format. For training data, I used GPT-4 to generate clues for about 500 randomly generated games (see [generate_sft_dataset.py](codenames_debate/generate_sft_dataset.py)). For training I used SFTTrainer from the library [trl](https://github.com/huggingface/trl) (see [sft.py](codenames_debate/sft.py)). The training also uses [peft](https://github.com/huggingface/peft) and [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) to save memory. Here's an inference example:
+The goal of this phase is to fine tune an LLM (Llama-2-13b for now) so that it outputs CodeNames clues in the correct format. For training data, I used GPT-4 to generate clues for about 500 randomly generated games (see [generate_sft_dataset.py](codenames_debate/generate_sft_dataset.py)). For training I used SFTTrainer from the library [trl](https://github.com/huggingface/trl) (see [sft.py](codenames_debate/sft.py)). The training also uses [peft](https://github.com/huggingface/peft) and [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) to save memory. Here's an inference example:
 
 Prompt:
 
@@ -33,9 +33,9 @@ The goal of this phase is to train the fine tuned model to output better clues. 
 
 A notable challenge was getting reasonable, reliable and inexpensive guesses out of the OpenAI API. This required a combination of simplifying the rules a bit, utilizing the logic_bias api parameter, and sometimes falling back to GPT-4.
 
-Status: the training code runs smoothly, but the model isn't learning to output better clues. My plan now is to read up on PPO, and try to tune the hyperparameters or add more data.
+Status: the training code runs smoothly, but it's unclear if the model is learning to output better clues. My plan now is to read up on PPO, and try to tune the hyperparameters or add more data.
 
-Here is the moving average of the reward over the training iterations. The window size is 64, which corresponds to 8 mini batches:
+Here is the moving average of the reward over the training examples. The window size is 256, which corresponds to 16 mini batches:
 
 ![PPO training reward moving average. Not very impressive](ppo_rolling_average_reward.png)
 
