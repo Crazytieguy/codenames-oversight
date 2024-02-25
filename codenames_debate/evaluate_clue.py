@@ -10,7 +10,7 @@ from .models import Clue, Evaluation, EvaluationError, Game, ParseError
 openai_client = OpenAI()
 openai_tokenizers = {
     "gpt-3.5-turbo": tiktoken.encoding_for_model("gpt-3.5-turbo"),
-    "gpt-4": tiktoken.encoding_for_model("gpt-4"),
+    "gpt-4-turbo-preview": tiktoken.encoding_for_model("gpt-4-turbo-preview"),
 }
 
 PROMPT = """\
@@ -49,9 +49,7 @@ def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
 
 
 def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
-    remaining_words = (
-        game.blue_words + game.red_words + game.white_words + [game.black_word]
-    )
+    remaining_words = game.good_words + game.bad_words
     if clue.one_word_clue.upper() in remaining_words:
         # Invalid clue
         return Evaluation(
@@ -77,7 +75,7 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
     logit_bias = 2.0
 
     while has_guesses_remaining() and (
-        is_first_guess() or guesses[-1] in game.blue_words
+        is_first_guess() or guesses[-1] in game.good_words
     ):
         prompt = PROMPT.format(
             clue=clue.one_word_clue,
@@ -113,7 +111,7 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
                 logging.warn(
                     f"GPT-3.5-Turbo returned an invalid guess twice. Retrying with GPT-4 ({guess=})"
                 )
-                model = "gpt-4"
+                model = "gpt-4-turbo-preview"
             else:
                 raise ValueError(
                     f"OpenAI models are returning invalid guesses: {remaining_words=}, {guess=}"
@@ -130,21 +128,8 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
 
 
 def compute_reward(game: Game, guesses: list[str]) -> float:
-    # The rest are guaranteed to be blue words
-    last_guess = guesses[-1]
-
-    last_guess_is_blue = last_guess in game.blue_words
-    last_guess_is_red = last_guess in game.red_words
-    last_guess_is_white = last_guess in game.white_words
-    last_guess_is_black = last_guess == game.black_word
-
-    last_guess_reward = {
-        last_guess_is_blue: 0,
-        last_guess_is_white: -0.2,
-        last_guess_is_red: -0.4,
-        last_guess_is_black: -1.0,
-    }[True]
-
+    # The rest are guaranteed to be good words
+    last_guess_reward = 0 if guesses[-1] in game.good_words else -0.4
     return len(guesses) * 0.2 + last_guess_reward
 
 
@@ -153,7 +138,7 @@ if __name__ == "__main__":
 
     from .models import SFTSample
 
-    examples = Path("codenames_debate/sft_hint_dataset.jsonl").read_text().splitlines()
+    examples = Path("codenames_debate/sft_clue_dataset.jsonl").read_text().splitlines()
 
     for example in examples[:10]:
         sample = SFTSample.model_validate_json(example)

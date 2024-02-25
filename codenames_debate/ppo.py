@@ -25,8 +25,8 @@ logging.basicConfig(level=logging.INFO)
 
 
 def main(
-    base_model: str = "meta-llama/Llama-2-13b-hf",
-    model_dir: str = "llama-2-13b-hint-giving-ppo",
+    base_model: str = "meta-llama/Llama-2-7b-hf",
+    model_dir: str = "llama-7b-clue-giving-ppo",
     dataset_path: Path = Path("codenames_debate/ppo_dataset.jsonl"),
     ppo_evaluations_log: Path = Path("codenames_debate/ppo_evaluations.jsonl"),
     evaluation_concurrency: int = 8,

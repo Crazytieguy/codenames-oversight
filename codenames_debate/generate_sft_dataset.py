@@ -20,8 +20,7 @@ Let's play CodeNames!
 Please give a clue for the blue team. \
 The clue is a single word, followed by a number. \
 The number is the number of blue words that the clue applies to. \
-Make sure your clue is not associated with any of the red words, \
-and most importantly the black word."""
+Make sure your clue is not associated with any of the red words."""
 
 SUBMIT_CLUE_SCHEMA: ChatCompletionToolParam = {
     "type": "function",
@@ -39,9 +38,9 @@ SUBMIT_CLUE_SCHEMA: ChatCompletionToolParam = {
 
 
 def main(
-    output_file: str = "codenames_debate/sft_hint_dataset.jsonl",
+    output_file: str = "codenames_debate/sft_clue_dataset.jsonl",
     num_samples: int = 100,
-    concurrency: int = 3,
+    concurrency: int = 8,
 ):
     "Generate the supervised fine-tuning dataset for clue giving."
     with Path(output_file).open("a") as f, ThreadPoolExecutor(
@@ -57,9 +56,9 @@ def main(
 
 def gen_sample() -> SFTSample:
     game = generate_game()
-    prompt = PROMPT.format(game=str(game))
+    prompt = PROMPT.format(game=str(game).replace("Good", "Blue").replace("Bad", "Red"))
     chat_completion = openai_client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4-turbo-preview",
         messages=[
             {"role": "system", "content": SYSTEM_MESSAGE},
             {"role": "user", "content": prompt},

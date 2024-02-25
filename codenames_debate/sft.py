@@ -4,21 +4,17 @@ Based mostly on https://github.com/huggingface/trl/blob/main/examples/scripts/sf
 
 import torch
 import typer
-from accelerate import Accelerator
 from datasets import load_dataset
 from peft import LoraConfig  # type: ignore
-from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
     TrainingArguments,
 )
-from trl import DataCollatorForCompletionOnlyLM, SFTTrainer, is_xpu_available
+from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 
 from .models import SFTSample
-
-tqdm.pandas()
 
 
 def format_prompt(example_raw: dict) -> dict:
@@ -30,42 +26,38 @@ def format_prompt(example_raw: dict) -> dict:
 
 def main(
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    output_dir: str = "llama-7b-hint-giving",
+    output_dir: str = "./models/llama-7b-clue-giving",
 ):
     dataset = load_dataset(
-        "json", data_files="codenames_debate/sft_hint_dataset.jsonl", split="train"
+        "json", data_files="codenames_debate/sft_clue_dataset.jsonl", split="train"
     ).map(format_prompt, batched=False)
 
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-    device_map = (
-        {"": f"xpu:{Accelerator().local_process_index}"}
-        if is_xpu_available()
-        else {"": Accelerator().local_process_index}
-    )
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         quantization_config=quantization_config,
-        device_map=device_map,
+        device_map="auto",
         torch_dtype=torch.bfloat16,
     )
 
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=4,  # critical for memory usage
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=8,
         learning_rate=1e-4,
         logging_steps=1,
         num_train_epochs=1,
         max_steps=-1,
-        report_to="none",  # type: ignore
-        save_steps=100,
+        report_to=["tensorboard"],
+        save_steps=0.25,
         save_total_limit=10,
+        neftune_noise_alpha=5,
     )
 
     peft_config = LoraConfig(
         r=64,
-        lora_alpha=16,
+        lora_alpha=64,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -74,8 +66,8 @@ def main(
 
     # For weird reasons, this is required in order for the model to learn to output eos.
     # See https://github.com/huggingface/transformers/issues/22794
-    # I don't expect to need the token '~'
-    tokenizer.add_special_tokens({"pad_token": "~"})
+    # I don't expect to need the token '♥'
+    tokenizer.add_special_tokens({"pad_token": "♥"})
 
     response_template = "\n\nClue:"
     # skip '<s>' and '▁'

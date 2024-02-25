@@ -1,49 +1,59 @@
+import json
+from pathlib import Path
+
 import torch
 import typer
-from accelerate import Accelerator
-from peft import PeftModel  # type: ignore
+from peft import AutoPeftModelForCausalLM  # type: ignore
+from toolz.itertoolz import partition_all
 from transformers import (
-    AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
 )
-from trl import is_xpu_available
 
 from .models import generate_game
 
 
 def main(
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    model_dir: str = "./llama-7b-hint-giving",
+    model_dir: str = "./models/llama-7b-clue-giving",
+    output_file: Path = Path("data/inference-llama-7b-clue-giving.jsonl"),
+    num_games: int = 16,
+    two_per_game: bool = True,  # for DPO
+    batch_size: int = 4,
 ):
-    "Run some inferences for some manual validation"
+    "Give some clues and evaluate them"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-    device_map = (
-        {"": f"xpu:{Accelerator().local_process_index}"}
-        if is_xpu_available()
-        else {"": Accelerator().local_process_index}
-    )
 
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model,
+    model = AutoPeftModelForCausalLM.from_pretrained(
+        model_dir,
         quantization_config=quantization_config,
-        device_map=device_map,
+        device_map="auto",
         torch_dtype=torch.bfloat16,
     )
-    model = PeftModel.from_pretrained(model, model_dir)
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    tokenizer = AutoTokenizer.from_pretrained(base_model, padding_side="left")
+    tokenizer.pad_token = tokenizer.eos_token
 
-    games = [generate_game() for _ in range(10)]
-    for game in games:
-        prompt = f"{game}\n\nClue:"
-        input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(model.device)
-        outputs = model.generate(input_ids=input_ids, max_new_tokens=10)
-        output_text = tokenizer.batch_decode(
-            outputs.detach().cpu().numpy(),  # type: ignore
+    games = [generate_game() for _ in range(num_games)]
+    out = []
+    for batch in partition_all(batch_size, games):
+        prompts = [f"{game}\n\nClue:" for game in batch]
+        input_ids = tokenizer(prompts, return_tensors="pt", padding=True).input_ids.to(
+            model.device
+        )
+        outputs = model.generate(
+            input_ids=input_ids,
+            max_new_tokens=10,
+            num_beams=2 if two_per_game else 1,
+            num_return_sequences=2 if two_per_game else 1,
+        )
+        output_texts = tokenizer.batch_decode(
+            outputs,
             skip_special_tokens=True,
-        )[0]
-        print(output_text, end="\n\n")
+        )
+        out.append(json.dumps(output_texts))
+    
+    output_file.write_text("".join(line + "\n" for line in out))
 
 
 if __name__ == "__main__":

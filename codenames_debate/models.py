@@ -7,17 +7,13 @@ WORDS = Path("words.txt").read_text().splitlines()
 
 
 class Game(BaseModel):
-    blue_words: list[str]
-    red_words: list[str]
-    white_words: list[str]
-    black_word: str
+    good_words: list[str]
+    bad_words: list[str]
 
     def __str__(self) -> str:
         return f"""\
-Blue words: {', '.join(self.blue_words)}
-Red words: {', '.join(self.red_words)}
-White words: {', '.join(self.white_words)}
-Black word: {self.black_word}"""
+Good words: {', '.join(self.good_words)}
+Bad words: {', '.join(self.bad_words)}"""
 
 
 class Clue(BaseModel):
@@ -46,16 +42,9 @@ class Evaluation(BaseModel):
 
 
 def generate_game() -> Game:
-    words = random.sample(WORDS, 25)
-    blue_words, red_words, white_words, [black_word] = (
-        words[:9],
-        words[9:17],
-        words[17:24],
-        words[24:],
-    )
+    words = random.sample(WORDS, 20)
+    good_words, bad_words = (words[:10], words[10:])
     return Game(
-        blue_words=blue_words,
-        red_words=red_words,
-        white_words=white_words,
-        black_word=black_word,
+        good_words=good_words,
+        bad_words=bad_words,
     )
