@@ -41,6 +41,11 @@ class Evaluation(BaseModel):
     guesses: list[str] | EvaluationError
 
 
+class ClueInferenceSample(BaseModel):
+    game: Game
+    clues: list[Clue | ParseError]
+
+
 def generate_game() -> Game:
     words = random.sample(WORDS, 20)
     good_words, bad_words = (words[:10], words[10:])

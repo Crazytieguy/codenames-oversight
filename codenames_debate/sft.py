@@ -29,7 +29,7 @@ def main(
     output_dir: str = "./models/llama-7b-clue-giving",
 ):
     dataset = load_dataset(
-        "json", data_files="codenames_debate/sft_clue_dataset.jsonl", split="train"
+        "json", data_files="data/sft_clue_dataset.jsonl", split="train"
     ).map(format_prompt, batched=False)
 
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -43,26 +43,25 @@ def main(
 
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=4,  # critical for memory usage
-        gradient_accumulation_steps=8,
-        learning_rate=1e-4,
+        per_device_train_batch_size=8,  # critical for memory usage
+        gradient_accumulation_steps=4,
+        learning_rate=1.5e-4,
         logging_steps=1,
         num_train_epochs=1,
         max_steps=-1,
         report_to=["tensorboard"],
         save_steps=0.25,
         save_total_limit=10,
-        neftune_noise_alpha=5,
     )
 
     peft_config = LoraConfig(
         r=64,
-        lora_alpha=64,
+        lora_alpha=32,
         bias="none",
         task_type="CAUSAL_LM",
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model, add_eos_token=True)
+    tokenizer = AutoTokenizer.from_pretrained(base_model, add_eos_token=True, padding_side="right")
 
     # For weird reasons, this is required in order for the model to learn to output eos.
     # See https://github.com/huggingface/transformers/issues/22794
@@ -73,7 +72,7 @@ def main(
     # skip '<s>' and '▁'
     response_template_ids = tokenizer.encode(
         response_template, add_special_tokens=False
-    )[2:]
+    )[1:]
     data_collator = DataCollatorForCompletionOnlyLM(
         response_template_ids, tokenizer=tokenizer
     )
@@ -85,7 +84,6 @@ def main(
         args=training_args,
         train_dataset=dataset,  # type: ignore
         dataset_text_field="text",
-        max_seq_length=256,
         peft_config=peft_config,
     )
 

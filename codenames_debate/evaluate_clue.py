@@ -22,6 +22,16 @@ Which one is most closely related to the word "{clue}"? Respond with just this w
 """
 
 
+def parse_clue(response: str) -> Clue | ParseError:
+    "Parse a clue from the model response"
+    try:
+        [clue_word, clue_num] = response.removesuffix("</s>").strip().split(", ")
+        return Clue(one_word_clue=clue_word, num_words=int(clue_num))
+    except Exception:
+        logging.warn(f"Failed to parse clue: {response}")
+        return ParseError(response=response)
+
+
 def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
     """
     Code for evaluating CodeNames clues using OpenAI's models.
@@ -138,7 +148,7 @@ if __name__ == "__main__":
 
     from .models import SFTSample
 
-    examples = Path("codenames_debate/sft_clue_dataset.jsonl").read_text().splitlines()
+    examples = Path("data/sft_clue_dataset.jsonl").read_text().splitlines()
 
     for example in examples[:10]:
         sample = SFTSample.model_validate_json(example)

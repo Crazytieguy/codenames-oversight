@@ -38,7 +38,7 @@ SUBMIT_CLUE_SCHEMA: ChatCompletionToolParam = {
 
 
 def main(
-    output_file: str = "codenames_debate/sft_clue_dataset.jsonl",
+    output_file: str = "data/sft_clue_dataset.jsonl",
     num_samples: int = 100,
     concurrency: int = 8,
 ):

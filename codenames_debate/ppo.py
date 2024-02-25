@@ -18,8 +18,8 @@ from trl import (
     set_seed,
 )
 
-from .evaluate_clue import evaluate_clue
-from .models import Clue, Evaluation, Game, ParseError
+from .evaluate_clue import evaluate_clue, parse_clue
+from .models import Evaluation, Game
 
 logging.basicConfig(level=logging.INFO)
 
@@ -144,15 +144,6 @@ def collator(samples: list[dict]) -> dict:
         "query": [s["query"] for s in samples],
         "input_ids": [torch.tensor(s["input_ids"]) for s in samples],
     }
-
-
-def parse_clue(response: str) -> Clue | ParseError:
-    try:
-        [clue_word, clue_num] = response.removesuffix("</s>").strip().split(", ")
-        return Clue(one_word_clue=clue_word, num_words=int(clue_num))
-    except Exception:
-        logging.warn(f"Failed to parse clue: {response}")
-        return ParseError(response=response)
 
 
 @contextmanager
