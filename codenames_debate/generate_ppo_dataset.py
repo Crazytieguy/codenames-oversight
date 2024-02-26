@@ -6,7 +6,7 @@ from .models import generate_game
 
 
 def main(
-    output_file: str = "codenames_debate/ppo_dataset.jsonl",
+    output_file: str = "data/ppo-dataset.jsonl",
     num_samples: int = 100,
 ):
     "Generate random games for PPO training."

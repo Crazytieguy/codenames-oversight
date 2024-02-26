@@ -35,10 +35,14 @@ class EvaluationError(BaseModel):
 
 
 class Evaluation(BaseModel):
-    game: Game
     clue: Clue | ParseError
     reward: float
     guesses: list[str] | EvaluationError
+
+
+class EvaluationPair(BaseModel):
+    game: Game
+    evaluations: tuple[Evaluation, Evaluation]
 
 
 class ClueInferenceSample(BaseModel):

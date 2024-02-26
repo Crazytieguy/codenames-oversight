@@ -41,7 +41,6 @@ def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
     """
     if isinstance(clue, ParseError):
         return Evaluation(
-            game=game,
             clue=clue,
             reward=-1.0,
             guesses=[],
@@ -51,7 +50,6 @@ def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
     except Exception as err:
         logging.warning(f"Failed to evaluate clue {err=}")
         return Evaluation(
-            game=game,
             clue=clue,
             reward=-0.0,
             guesses=EvaluationError(reason=repr(err)),
@@ -63,7 +61,6 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
     if clue.one_word_clue.upper() in remaining_words:
         # Invalid clue
         return Evaluation(
-            game=game,
             clue=clue,
             reward=-1.0,
             guesses=[],
@@ -134,7 +131,7 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
         remaining_words.remove(guess)
 
     reward = compute_reward(game, guesses)
-    return Evaluation(game=game, clue=clue, reward=reward, guesses=guesses)
+    return Evaluation(clue=clue, reward=reward, guesses=guesses)
 
 
 def compute_reward(game: Game, guesses: list[str]) -> float:
@@ -148,7 +145,7 @@ if __name__ == "__main__":
 
     from .models import SFTSample
 
-    examples = Path("data/sft_clue_dataset.jsonl").read_text().splitlines()
+    examples = Path("data/sft-clue-dataset.jsonl").read_text().splitlines()
 
     for example in examples[:10]:
         sample = SFTSample.model_validate_json(example)

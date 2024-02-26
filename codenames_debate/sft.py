@@ -29,7 +29,7 @@ def main(
     output_dir: str = "./models/llama-7b-clue-giving",
 ):
     dataset = load_dataset(
-        "json", data_files="data/sft_clue_dataset.jsonl", split="train"
+        "json", data_files="data/sft-clue-dataset.jsonl", split="train"
     ).map(format_prompt, batched=False)
 
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)

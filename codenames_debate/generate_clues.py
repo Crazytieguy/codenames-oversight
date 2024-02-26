@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import torch
 import typer
 from peft import AutoPeftModelForCausalLM  # type: ignore
@@ -16,7 +14,6 @@ from .models import ClueInferenceSample, generate_game
 
 def main(
     model_dir: str = "./models/llama-7b-clue-giving",
-    output_file: Path = Path("data/inference-llama-7b-clue-giving.jsonl"),
     clues_per_game: int = 1,
     num_games: int = 64,
     batch_size: int = 32,
@@ -37,7 +34,6 @@ def main(
     tokenizer.pad_token = tokenizer.eos_token
 
     games = [generate_game() for _ in range(num_games)]
-    out = []
     for batch in tqdm(
         partition_all(batch_size, games),
         desc="Generating clues",
@@ -66,10 +62,7 @@ def main(
         for game, outputs in zip(batch, partition_all(clues_per_game, output_texts)):
             clues = [parse_clue(output.split("\n\nClue:")[1]) for output in outputs]
             sample = ClueInferenceSample(game=game, clues=clues)
-            out.append(sample)
-
-    output_file.write_text("".join(sample.model_dump_json() + "\n" for sample in out))
-
+            print(sample.model_dump_json())
 
 if __name__ == "__main__":
     typer.run(main)
