@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 import torch
 import typer
@@ -11,21 +10,14 @@ from trl import DPOTrainer
 from .models import Clue, EvaluationPair, ParseError
 
 
-def main(
-    phase: Optional[int] = None
-):
-    if phase is None:
-        dataset_file = "data/dpo-dataset.jsonl"
-        model_dir = "./models/llama-7b-clue-giving"
-        output_dir = "./models/llama-7b-clue-giving-dpo"
-    elif phase == 2:
-        dataset_file = "data/dpo-2-dataset.jsonl"
-        model_dir = "./models/llama-7b-clue-giving-dpo"
-        output_dir = "./models/llama-7b-clue-giving-dpo-2"
-    else:
-        dataset_file = f"data/dpo-{phase}-dataset.jsonl"
-        model_dir = f"./models/llama-7b-clue-giving-dpo-{phase - 1}"
-        output_dir = f"./models/llama-7b-clue-giving-dpo-{phase}"
+def main(phase: int):
+    dataset_file = f"data/dpo-{phase}-dataset.jsonl"
+    model_dir = (
+        "./models/llama-7b-clue-giving"
+        if phase == 0
+        else f"./models/llama-7b-clue-giving-dpo-{phase - 1}"
+    )
+    output_dir = f"./models/llama-7b-clue-giving-dpo-{phase}"
     data = Path(dataset_file).read_text().splitlines()
     dataset = Dataset.from_list([format_dpo_row(line) for line in data])
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -50,6 +42,7 @@ def main(
         report_to=["tensorboard"],
         save_steps=0.25,
         save_total_limit=10,
+        remove_unused_columns=False,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_dir, add_eos_token=False)
     tokenizer.pad_token = tokenizer.eos_token
@@ -61,6 +54,8 @@ def main(
         beta=0.3,
         train_dataset=dataset,  # type: ignore
         tokenizer=tokenizer,
+        max_length=128,
+        max_prompt_length=128,
     )
     dpo_trainer.train()
     dpo_trainer.save_model()

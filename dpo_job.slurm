@@ -13,5 +13,5 @@ singularity exec --nv --overlay /scratch/yt3114/llm-math-debate.ext3:ro /scratch
 
 source /ext3/env.sh
 export $(cat .env)
-python -m codenames_debate.dpo 
+python -m codenames_debate.dpo 2
 "

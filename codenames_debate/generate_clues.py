@@ -17,6 +17,7 @@ def main(
     clues_per_game: int = 1,
     num_games: int = 64,
     batch_size: int = 32,
+    diversity_penalty: float = 2.0,
 ):
     "Give some clues"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -50,7 +51,7 @@ def main(
                 max_new_tokens=10,
                 num_beams=clues_per_game,
                 num_beam_groups=clues_per_game,
-                diversity_penalty=2.0,
+                diversity_penalty=diversity_penalty,
                 num_return_sequences=clues_per_game,
             )
         else:

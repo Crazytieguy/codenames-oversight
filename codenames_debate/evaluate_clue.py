@@ -108,24 +108,29 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
         guess_is_valid = guess in remaining_words
 
         if not guess_is_valid:
-            if retry_count == 0:
-                logging.warn(
-                    f"GPT-3.5-Turbo returned an invalid guess. Retrying with higher logit bias ({guess=})"
-                )
-                logit_bias = 4.0
-
-            elif retry_count == 1:
-                logging.warn(
-                    f"GPT-3.5-Turbo returned an invalid guess twice. Retrying with GPT-4 ({guess=})"
-                )
-                model = "gpt-4-turbo-preview"
+            for word in remaining_words:
+                if guess in word.split():
+                    guess = word
+                    break
             else:
-                raise ValueError(
-                    f"OpenAI models are returning invalid guesses: {remaining_words=}, {guess=}"
-                )
+                if retry_count == 0:
+                    logging.warn(
+                        f"GPT-3.5-Turbo returned an invalid guess. Retrying with higher logit bias ({guess=})"
+                    )
+                    logit_bias = 4.0
 
-            retry_count += 1
-            continue
+                elif retry_count == 1:
+                    logging.warn(
+                        f"GPT-3.5-Turbo returned an invalid guess twice. Retrying with GPT-4 ({guess=})"
+                    )
+                    model = "gpt-4-turbo-preview"
+                else:
+                    raise ValueError(
+                        f"OpenAI models are returning invalid guesses: {remaining_words=}, {guess=}"
+                    )
+
+                retry_count += 1
+                continue
 
         guesses.append(guess)
         remaining_words.remove(guess)
