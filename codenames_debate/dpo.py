@@ -7,19 +7,19 @@ from peft import AutoPeftModelForCausalLM  # type: ignore
 from transformers import AutoTokenizer, BitsAndBytesConfig, TrainingArguments
 from trl import DPOTrainer
 
-from .models import Clue, EvaluationPair, ParseError
+from .models import PreferencePair
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def main(phase: int):
-    dataset_file = f"data/dpo-{phase}-dataset.jsonl"
-    model_dir = (
-        "./models/llama-7b-clue-giving"
-        if phase == 0
-        else f"./models/llama-7b-clue-giving-dpo-{phase - 1}"
-    )
-    output_dir = f"./models/llama-7b-clue-giving-dpo-{phase}"
-    data = Path(dataset_file).read_text().splitlines()
-    dataset = Dataset.from_list([format_dpo_row(line) for line in data])
+@app.command()
+def main(dataset_file: str, model_dir: str, output_dir: str):
+    data = [
+        dpo_row
+        for line in Path(dataset_file).read_text().splitlines()
+        if (dpo_row := PreferencePair.model_validate_json(line).dpo_row()) is not None
+    ]
+    dataset = Dataset.from_list(data)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     model = AutoPeftModelForCausalLM.from_pretrained(
@@ -61,22 +61,5 @@ def main(phase: int):
     dpo_trainer.save_model()
 
 
-def format_dpo_row(raw_sample: str) -> dict:
-    evaluation_pair = EvaluationPair.model_validate_json(raw_sample)
-    prompt = f"{evaluation_pair.game}\n\nClue: "
-    rejected, chosen = sorted(evaluation_pair.evaluations, key=lambda e: e.reward)
-    return {
-        "prompt": prompt,
-        "rejected": format_clue(rejected.clue),
-        "chosen": format_clue(chosen.clue),
-    }
-
-
-def format_clue(clue: Clue | ParseError) -> str:
-    if isinstance(clue, ParseError):
-        return f"{clue.response}"
-    return f"{clue.one_word_clue}, {clue.num_words}"
-
-
 if __name__ == "__main__":
-    typer.run(main)
+    app()

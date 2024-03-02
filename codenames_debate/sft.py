@@ -14,23 +14,20 @@ from transformers import (
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 
-from .models import SFTSample
+from .models import SFTClueSample
+
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def format_prompt(example_raw: dict) -> dict:
-    example = SFTSample.model_validate(example_raw)
-    clue_word = example.clue.one_word_clue.title()
-    clue_num = example.clue.num_words
-    return {"text": f"{example.game}\n\nClue: {clue_word}, {clue_num}"}
-
-
+@app.command()
 def main(
+    output_dir: str,
+    dataset_file: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    output_dir: str = "./models/llama-7b-clue-giving",
 ):
-    dataset = load_dataset(
-        "json", data_files="data/sft-clue-dataset.jsonl", split="train"
-    ).map(format_prompt, batched=False)
+    dataset = load_dataset("json", data_files=dataset_file, split="train").map(
+        format_prompt, batched=False
+    )
 
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
@@ -61,7 +58,9 @@ def main(
         task_type="CAUSAL_LM",
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model, add_eos_token=True, padding_side="right")
+    tokenizer = AutoTokenizer.from_pretrained(
+        base_model, add_eos_token=True, padding_side="right"
+    )
 
     # For weird reasons, this is required in order for the model to learn to output eos.
     # See https://github.com/huggingface/transformers/issues/22794
@@ -91,5 +90,13 @@ def main(
     trainer.save_model(output_dir)
 
 
+def format_prompt(sample_raw: dict) -> dict:
+    sample = SFTClueSample.model_validate(sample_raw)
+    text = f"""{sample.game}
+
+{sample.clue}"""
+    return {"text": text}
+
+
 if __name__ == "__main__":
-    typer.run(main)
+    app()

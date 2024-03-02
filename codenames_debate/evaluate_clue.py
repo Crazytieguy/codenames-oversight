@@ -25,8 +25,12 @@ Which one is most closely related to the word "{clue}"? Respond with just this w
 def parse_clue(response: str) -> Clue | ParseError:
     "Parse a clue from the model response"
     try:
-        [clue_word, clue_num] = response.removesuffix("</s>").strip().split(", ")
-        return Clue(one_word_clue=clue_word, num_words=int(clue_num))
+        clue_line, targets_line = response.removesuffix("</s>").strip().split("\n")
+        assert clue_line.startswith("Clue: ")
+        assert targets_line.startswith("Targets: ")
+        clue = clue_line[len("Clue: ") :]
+        targets = targets_line[len("Targets: ") :].split(", ")
+        return Clue(clue=clue, targets=targets)
     except Exception:
         logging.warn(f"Failed to parse clue: {response}")
         return ParseError(response=response)
@@ -41,8 +45,9 @@ def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
     """
     if isinstance(clue, ParseError):
         return Evaluation(
+            game=game,
             clue=clue,
-            reward=-1.0,
+            score=-1,
             guesses=[],
         )
     try:
@@ -50,19 +55,21 @@ def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
     except Exception as err:
         logging.warning(f"Failed to evaluate clue {err=}")
         return Evaluation(
+            game=game,
             clue=clue,
-            reward=-0.0,
+            score=0,
             guesses=EvaluationError(reason=repr(err)),
         )
 
 
 def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
     remaining_words = game.good_words + game.bad_words
-    if clue.one_word_clue.upper() in remaining_words:
+    if clue.clue.upper() in remaining_words:
         # Invalid clue
         return Evaluation(
+            game=game,
             clue=clue,
-            reward=-1.0,
+            score=-1,
             guesses=[],
         )
 
@@ -70,22 +77,14 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
 
     guesses = []
 
-    def is_first_guess():
-        return len(guesses) == 0
-
-    def has_guesses_remaining():
-        return len(guesses) < clue.num_words
-
     retry_count = 0
     model = "gpt-3.5-turbo"
     # start low, as I've noticed high values can cause a timeout
     logit_bias = 2.0
 
-    while has_guesses_remaining() and (
-        is_first_guess() or guesses[-1] in game.good_words
-    ):
+    while len(guesses) == 0 or guesses[-1] in game.good_words:
         prompt = PROMPT.format(
-            clue=clue.one_word_clue,
+            clue=clue.clue,
             words=" ".join(remaining_words),
         )
 
@@ -135,24 +134,5 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
         guesses.append(guess)
         remaining_words.remove(guess)
 
-    reward = compute_reward(game, guesses)
-    return Evaluation(clue=clue, reward=reward, guesses=guesses)
-
-
-def compute_reward(game: Game, guesses: list[str]) -> float:
-    # The rest are guaranteed to be good words
-    last_guess_reward = 0 if guesses[-1] in game.good_words else -0.4
-    return len(guesses) * 0.2 + last_guess_reward
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-
-    from .models import SFTSample
-
-    examples = Path("data/sft-clue-dataset.jsonl").read_text().splitlines()
-
-    for example in examples[:10]:
-        sample = SFTSample.model_validate_json(example)
-        evaluation = evaluate_clue(sample.game, sample.clue)
-        print(evaluation.model_dump_json())
+    score = len(guesses) - 1  # the last word is a bad word, thus doesn't count
+    return Evaluation(game=game, clue=clue, score=score, guesses=guesses)

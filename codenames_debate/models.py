@@ -17,11 +17,16 @@ Bad words: {', '.join(self.bad_words)}"""
 
 
 class Clue(BaseModel):
-    one_word_clue: str
-    num_words: int
+    clue: str
+    targets: list[str]
+
+    def __str__(self) -> str:
+        return f"""\
+Clue: {self.clue}
+Targets: {', '.join(self.targets)}"""
 
 
-class SFTSample(BaseModel):
+class SFTClueSample(BaseModel):
     game: Game
     clue: Clue
 
@@ -35,14 +40,10 @@ class EvaluationError(BaseModel):
 
 
 class Evaluation(BaseModel):
-    clue: Clue | ParseError
-    reward: float
-    guesses: list[str] | EvaluationError
-
-
-class EvaluationPair(BaseModel):
     game: Game
-    evaluations: tuple[Evaluation, Evaluation]
+    clue: Clue | ParseError
+    score: int
+    guesses: list[str] | EvaluationError
 
 
 class ClueInferenceSample(BaseModel):
@@ -50,9 +51,37 @@ class ClueInferenceSample(BaseModel):
     clues: list[Clue | ParseError]
 
 
-def generate_game() -> Game:
-    words = random.sample(WORDS, 20)
-    good_words, bad_words = (words[:10], words[10:])
+class OverSight(BaseModel):
+    clue: Clue | ParseError
+    expected_score: int
+    comparisons_performed: int
+
+
+class PreferencePair(BaseModel):
+    game: Game
+    oversights: tuple[OverSight, OverSight]
+
+    def dpo_row(self) -> dict | None:
+        if self.oversights[0].expected_score == self.oversights[1].expected_score:
+            return None
+        prompt = f"{self.game}\n\nClue: "
+        rejected, chosen = sorted(self.oversights, key=lambda e: e.expected_score)
+        return {
+            "prompt": prompt,
+            "rejected": format_clue_for_dpo(rejected.clue),
+            "chosen": format_clue_for_dpo(chosen.clue),
+        }
+
+
+def format_clue_for_dpo(clue: Clue | ParseError) -> str:
+    if isinstance(clue, ParseError):
+        return str(clue.response)
+    return str(clue).removesuffix("Clue: ")
+
+
+def generate_game(num_words: int = 20) -> Game:
+    words = random.sample(WORDS, num_words)
+    good_words, bad_words = (words[: num_words // 2], words[num_words // 2 :])
     return Game(
         good_words=good_words,
         bad_words=bad_words,
