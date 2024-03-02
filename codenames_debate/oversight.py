@@ -3,10 +3,10 @@ from enum import Enum, auto
 from .models import Evaluation, EvaluationError, OverSight, ParseError
 
 
-class OverSeer(Enum):
+class OverSeer(str, Enum):
     ROBUST = auto()
 
-    def __call__(self, evaluation: Evaluation) -> OverSight:
+    def oversee(self, evaluation: Evaluation) -> OverSight:
         if self == OverSeer.ROBUST:
             return robust_overseer(evaluation)
         raise NotImplementedError(f"Unknown overseer: {self}")
@@ -32,14 +32,24 @@ def compare_word_pair(evaluation: Evaluation, first: str, second: str) -> GuessO
     return GuessOrder.BEFORE if first_index < second_index else GuessOrder.AFTER
 
 
+def basic_validation(evaluation: Evaluation) -> OverSight | None:
+    if isinstance(evaluation.guesses, EvaluationError):
+        return OverSight.from_evaluation(evaluation, 0, 0)
+    if evaluation.guesses == []:
+        # Invalid clue
+        return OverSight.from_evaluation(evaluation, -1, 0)
+    assert not isinstance(evaluation.clue, ParseError)
+    for target in evaluation.clue.targets:
+        if target.upper() not in evaluation.game.good_words:
+            return OverSight.from_evaluation(evaluation, -1, 0)
+    return None
+
+
 def robust_overseer(evaluation: Evaluation) -> OverSight:
     comparisons_performed = 0
-    if isinstance(evaluation.clue, ParseError):
-        return OverSight(
-            clue=evaluation.clue,
-            expected_score=0,
-            comparisons_performed=comparisons_performed,
-        )
+    if (oversight := basic_validation(evaluation)) is not None:
+        return oversight
+    assert not isinstance(evaluation.clue, ParseError)
     worst_target = evaluation.clue.targets[0]
     for target in evaluation.clue.targets[1:]:
         order = compare_word_pair(evaluation, worst_target, target)
@@ -50,13 +60,7 @@ def robust_overseer(evaluation: Evaluation) -> OverSight:
         order = compare_word_pair(evaluation, worst_target, word)
         comparisons_performed += 1
         if order == GuessOrder.AFTER:
-            return OverSight(
-                clue=evaluation.clue,
-                expected_score=0,
-                comparisons_performed=comparisons_performed,
-            )
-    return OverSight(
-        clue=evaluation.clue,
-        expected_score=len(evaluation.clue.targets),
-        comparisons_performed=comparisons_performed,
+            return OverSight.from_evaluation(evaluation, 0, comparisons_performed)
+    return OverSight.from_evaluation(
+        evaluation, len(evaluation.clue.targets), comparisons_performed
     )

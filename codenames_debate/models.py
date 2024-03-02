@@ -54,7 +54,21 @@ class ClueInferenceSample(BaseModel):
 class OverSight(BaseModel):
     clue: Clue | ParseError
     expected_score: int
+    ground_truth_score: int
+    ground_truth_guesses: list[str] | EvaluationError
     comparisons_performed: int
+
+    @classmethod
+    def from_evaluation(
+        cls, evaluation: Evaluation, expected_score: int, comparisons_performed: int
+    ) -> "OverSight":
+        return OverSight(
+            clue=evaluation.clue,
+            expected_score=expected_score,
+            ground_truth_score=evaluation.score,
+            ground_truth_guesses=evaluation.guesses,
+            comparisons_performed=comparisons_performed,
+        )
 
 
 class PreferencePair(BaseModel):

@@ -10,3 +10,6 @@ openai
 pydantic==2.4.2
 toolz
 pytest
+tiktoken
+tensorboard
+pandas
