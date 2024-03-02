@@ -23,21 +23,21 @@ def main(
         for line in clue_dataset.read_text().splitlines()
     ]
     with ThreadPoolExecutor(max_workers=concurrency) as ex:
-        pairs = [ex.submit(gen_evaluation_pair, sample, overseer) for sample in data]
+        pairs = [ex.submit(gen_preference_pair, sample, overseer) for sample in data]
         for pair in tqdm(
             as_completed(pairs), desc="Generating evaluations", total=len(pairs)
         ):
             print(pair.result().model_dump_json())
 
 
-def gen_evaluation_pair(
+def gen_preference_pair(
     clue_inference_sample: ClueInferenceSample, overseer: OverSeer
 ) -> PreferencePair:
     assert len(clue_inference_sample.clues) == 2  # might not make sense with more clues
     game = clue_inference_sample.game
     oversights = (
-        overseer(evaluate_clue(game, clue_inference_sample.clues[0])),
-        overseer(evaluate_clue(game, clue_inference_sample.clues[1])),
+        overseer.oversee(evaluate_clue(game, clue_inference_sample.clues[0])),
+        overseer.oversee(evaluate_clue(game, clue_inference_sample.clues[1])),
     )
     return PreferencePair(
         game=game,
