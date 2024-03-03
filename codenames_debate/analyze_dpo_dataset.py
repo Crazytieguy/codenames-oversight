@@ -25,3 +25,6 @@ def main(dataset_file: Path):
         ]
     )
     print(df.describe())
+
+if __name__ == "__main__":
+    app()
