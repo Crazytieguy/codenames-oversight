@@ -5,7 +5,7 @@ import random
 import tiktoken
 from openai import OpenAI
 
-from .models import Clue, Evaluation, EvaluationError, Game, ParseError
+from .models import Clue, ClueCritiques, Evaluation, EvaluationError, Game, ParseError
 
 openai_client = OpenAI()
 openai_tokenizers = {
@@ -22,56 +22,44 @@ Which one is most closely related to the word "{clue}"? Respond with just this w
 """
 
 
-def parse_clue(response: str) -> Clue | ParseError:
-    "Parse a clue from the model response"
-    try:
-        clue_line, targets_line = response.removesuffix("</s>").strip().split("\n")
-        assert clue_line.startswith("Clue: ")
-        assert targets_line.startswith("Targets: ")
-        clue = clue_line[len("Clue: ") :]
-        targets = targets_line[len("Targets: ") :].split(", ")
-        return Clue(clue=clue, targets=targets)
-    except Exception:
-        logging.warn(f"Failed to parse clue: {response}")
-        return ParseError(response=response)
-
-
-def evaluate_clue(game: Game, clue: Clue | ParseError) -> Evaluation:
+def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
     """
     Code for evaluating CodeNames clues using OpenAI's models.
     See https://czechgames.com/files/rules/codenames-rules-en.pdf for the rules of the game.
 
     I've decided not to allow ending the turn prematurely, for simplicity.
     """
+    clue = clue_critiques.clue
     if isinstance(clue, ParseError):
         return Evaluation(
             game=game,
-            clue=clue,
+            clue_critiques=clue_critiques,
             score=-1,
             guesses=[],
         )
     try:
-        return evaluate_clue_inner(game, clue)
+        score, guesses = evaluate_clue_inner(game, clue)
+        return Evaluation(
+            game=game,
+            clue_critiques=clue_critiques,
+            score=score,
+            guesses=guesses,
+        )
     except Exception as err:
         logging.warning(f"Failed to evaluate clue {err=}")
         return Evaluation(
             game=game,
-            clue=clue,
+            clue_critiques=clue_critiques,
             score=0,
             guesses=EvaluationError(reason=repr(err)),
         )
 
 
-def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
+def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
     remaining_words = game.good_words + game.bad_words
     if clue.clue.upper() in remaining_words:
         # Invalid clue
-        return Evaluation(
-            game=game,
-            clue=clue,
-            score=-1,
-            guesses=[],
-        )
+        return -1, []
 
     random.shuffle(remaining_words)
 
@@ -135,4 +123,4 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> Evaluation:
         remaining_words.remove(guess)
 
     score = len(guesses) - 1  # the last word is a bad word, thus doesn't count
-    return Evaluation(game=game, clue=clue, score=score, guesses=guesses)
+    return score, guesses

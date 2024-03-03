@@ -5,7 +5,7 @@ import typer
 from tqdm import tqdm
 
 from .evaluate_clue import evaluate_clue
-from .models import ClueInferenceSample, PreferencePair
+from .models import InferenceSample, PreferencePair
 from .oversight import OverSeer
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -19,7 +19,7 @@ def main(
 ):
     "Generate a DPO dataset from a dataset of clue pairs"
     data = [
-        ClueInferenceSample.model_validate_json(line)
+        InferenceSample.model_validate_json(line)
         for line in clue_dataset.read_text().splitlines()
     ]
     with ThreadPoolExecutor(max_workers=concurrency) as ex:
@@ -31,13 +31,15 @@ def main(
 
 
 def gen_preference_pair(
-    clue_inference_sample: ClueInferenceSample, overseer: OverSeer
+    clue_inference_sample: InferenceSample, overseer: OverSeer
 ) -> PreferencePair:
-    assert len(clue_inference_sample.clues) == 2  # might not make sense with more clues
+    assert (
+        len(clue_inference_sample.clue_critiques) == 2
+    )  # might not make sense with more clues
     game = clue_inference_sample.game
     oversights = (
-        overseer.oversee(evaluate_clue(game, clue_inference_sample.clues[0])),
-        overseer.oversee(evaluate_clue(game, clue_inference_sample.clues[1])),
+        overseer.oversee(evaluate_clue(game, clue_inference_sample.clue_critiques[0])),
+        overseer.oversee(evaluate_clue(game, clue_inference_sample.clue_critiques[1])),
     )
     return PreferencePair(
         game=game,

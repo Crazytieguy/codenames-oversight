@@ -38,20 +38,21 @@ def basic_validation(evaluation: Evaluation) -> OverSight | None:
     if evaluation.guesses == []:
         # Invalid clue
         return OverSight.from_evaluation(evaluation, -1, 0)
-    assert not isinstance(evaluation.clue, ParseError)
-    for target in evaluation.clue.targets:
+    assert not isinstance(evaluation.clue_critiques.clue, ParseError)
+    for target in evaluation.clue_critiques.clue.targets:
         if target.upper() not in evaluation.game.good_words:
             return OverSight.from_evaluation(evaluation, -1, 0)
     return None
 
 
 def robust_overseer(evaluation: Evaluation) -> OverSight:
+    "An overseer that makes all the necessary comparisons rather than relying on the critique[s]"
     comparisons_performed = 0
     if (oversight := basic_validation(evaluation)) is not None:
         return oversight
-    assert not isinstance(evaluation.clue, ParseError)
-    worst_target = evaluation.clue.targets[0]
-    for target in evaluation.clue.targets[1:]:
+    assert not isinstance(evaluation.clue_critiques.clue, ParseError)
+    worst_target = evaluation.clue_critiques.clue.targets[0]
+    for target in evaluation.clue_critiques.clue.targets[1:]:
         order = compare_word_pair(evaluation, worst_target, target)
         comparisons_performed += 1
         if order == GuessOrder.BEFORE:
@@ -62,5 +63,5 @@ def robust_overseer(evaluation: Evaluation) -> OverSight:
         if order == GuessOrder.AFTER:
             return OverSight.from_evaluation(evaluation, 0, comparisons_performed)
     return OverSight.from_evaluation(
-        evaluation, len(evaluation.clue.targets), comparisons_performed
+        evaluation, len(evaluation.clue_critiques.clue.targets), comparisons_performed
     )

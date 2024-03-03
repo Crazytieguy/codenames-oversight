@@ -8,8 +8,7 @@ from transformers import (
     BitsAndBytesConfig,
 )
 
-from .evaluate_clue import parse_clue
-from .models import ClueInferenceSample, generate_game
+from .models import Clue, ClueCritiques, InferenceSample, generate_game
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -64,8 +63,10 @@ def main(
             skip_special_tokens=True,
         )
         for game, outputs in zip(batch, partition_all(clues_per_game, output_texts)):
-            clues = [parse_clue(output.split("\n\n")[1]) for output in outputs]
-            sample = ClueInferenceSample(game=game, clues=clues)
+            clues = [Clue.parse_response(output.split("\n\n")[1]) for output in outputs]
+            sample = InferenceSample(
+                game=game, clue_critiques=[ClueCritiques(clue=clue) for clue in clues]
+            )
             print(sample.model_dump_json())
 
 

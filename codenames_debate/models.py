@@ -1,7 +1,8 @@
+import logging
 import random
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 WORDS = Path("words.txt").read_text().splitlines()
 
@@ -16,6 +17,10 @@ Good words: {', '.join(self.good_words)}
 Bad words: {', '.join(self.bad_words)}"""
 
 
+class ParseError(BaseModel):
+    response: str
+
+
 class Clue(BaseModel):
     clue: str
     targets: list[str]
@@ -25,6 +30,20 @@ class Clue(BaseModel):
 Clue: {self.clue}
 Targets: {', '.join(self.targets)}"""
 
+    @staticmethod
+    def parse_response(response: str) -> "Clue | ParseError":
+        "Parse a clue from the model response"
+        try:
+            clue_line, targets_line = response.removesuffix("</s>").strip().split("\n")
+            assert clue_line.startswith("Clue: ")
+            assert targets_line.startswith("Targets: ")
+            clue = clue_line[len("Clue: ") :]
+            targets = targets_line[len("Targets: ") :].split(", ")
+            return Clue(clue=clue, targets=targets)
+        except Exception:
+            logging.warning(f"Failed to parse clue: {response}")
+            return ParseError(response=response)
+
 
 class Critique(BaseModel):
     bad_word: str
@@ -33,6 +52,21 @@ class Critique(BaseModel):
     def __str__(self) -> str:
         return f"Critique: {self.bad_word} > {self.target_good_word}"
 
+    @staticmethod
+    def parse_response(response: str) -> "Critique | ParseError":
+        "Parse a critique from the model response"
+        try:
+            bad_word, target_good_word = (
+                response.removesuffix("</s>")
+                .removeprefix("Critique: ")
+                .strip()
+                .split(" > ")
+            )
+            return Critique(bad_word=bad_word, target_good_word=target_good_word)
+        except Exception:
+            logging.warning(f"Failed to parse critique: {response}")
+            return ParseError(response=response)
+
 
 class SFTSample(BaseModel):
     game: Game
@@ -40,8 +74,14 @@ class SFTSample(BaseModel):
     critique: Critique
 
 
-class ParseError(BaseModel):
-    response: str
+class ClueCritiques(BaseModel):
+    clue: Clue | ParseError
+    critiques: list[Critique | ParseError] = Field(default_factory=list)
+
+
+class InferenceSample(BaseModel):
+    game: Game
+    clue_critiques: list[ClueCritiques]
 
 
 class EvaluationError(BaseModel):
@@ -50,29 +90,24 @@ class EvaluationError(BaseModel):
 
 class Evaluation(BaseModel):
     game: Game
-    clue: Clue | ParseError
+    clue_critiques: ClueCritiques
     score: int
     guesses: list[str] | EvaluationError
 
 
-class ClueInferenceSample(BaseModel):
-    game: Game
-    clues: list[Clue | ParseError]
-
-
 class OverSight(BaseModel):
-    clue: Clue | ParseError
+    clue_critiques: ClueCritiques
     expected_score: int
     ground_truth_score: int
     ground_truth_guesses: list[str] | EvaluationError
     comparisons_performed: int
 
-    @classmethod
+    @staticmethod
     def from_evaluation(
-        cls, evaluation: Evaluation, expected_score: int, comparisons_performed: int
+        evaluation: Evaluation, expected_score: int, comparisons_performed: int
     ) -> "OverSight":
         return OverSight(
-            clue=evaluation.clue,
+            clue_critiques=evaluation.clue_critiques,
             expected_score=expected_score,
             ground_truth_score=evaluation.score,
             ground_truth_guesses=evaluation.guesses,
@@ -91,8 +126,8 @@ class PreferencePair(BaseModel):
         rejected, chosen = sorted(self.oversights, key=lambda e: e.expected_score)
         return {
             "prompt": prompt,
-            "rejected": format_clue_for_dpo(rejected.clue),
-            "chosen": format_clue_for_dpo(chosen.clue),
+            "rejected": format_clue_for_dpo(rejected.clue_critiques.clue),
+            "chosen": format_clue_for_dpo(chosen.clue_critiques.clue),
         }
 
 
