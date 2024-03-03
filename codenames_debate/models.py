@@ -26,9 +26,18 @@ Clue: {self.clue}
 Targets: {', '.join(self.targets)}"""
 
 
-class SFTClueSample(BaseModel):
+class Critique(BaseModel):
+    bad_word: str
+    target_good_word: str
+
+    def __str__(self) -> str:
+        return f"Critique: {self.bad_word} > {self.target_good_word}"
+
+
+class SFTSample(BaseModel):
     game: Game
     clue: Clue
+    critique: Critique
 
 
 class ParseError(BaseModel):

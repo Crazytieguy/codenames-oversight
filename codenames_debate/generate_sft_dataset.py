@@ -1,4 +1,5 @@
 import logging
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import typer
@@ -6,7 +7,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionToolParam
 from tqdm import tqdm
 
-from .models import Clue, SFTClueSample, generate_game
+from .models import Clue, Critique, Game, SFTSample, generate_game
 
 openai_client = OpenAI()
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -55,7 +56,7 @@ def main(
                 print(sample.model_dump_json())
 
 
-def gen_sample() -> SFTClueSample | None:
+def gen_sample() -> SFTSample | None:
     game = generate_game()
     prompt = PROMPT.format(game=str(game).replace("Good", "Blue").replace("Bad", "Red"))
     chat_completion = openai_client.chat.completions.create(
@@ -79,7 +80,19 @@ def gen_sample() -> SFTClueSample | None:
             logger.warn(f"Invalid target word: {target}")
             return None
 
-    return SFTClueSample(game=game, clue=clue)
+    return with_random_critique(game, clue)
+
+
+def with_random_critique(game: Game, clue: Clue) -> SFTSample:
+    "Generate a random critique for a given clue"
+    return SFTSample(
+        game=game,
+        clue=clue,
+        critique=Critique(
+            bad_word=random.choice(game.bad_words),
+            target_good_word=random.choice(clue.targets),
+        ),
+    )
 
 
 if __name__ == "__main__":
