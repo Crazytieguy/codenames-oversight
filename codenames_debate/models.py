@@ -1,5 +1,6 @@
 import logging
 import random
+from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -95,23 +96,36 @@ class Evaluation(BaseModel):
     guesses: list[str] | EvaluationError
 
 
+class OverSeer(str, Enum):
+    ROBUST = "robust"
+    JUDGE = "judge"
+
+
 class OverSight(BaseModel):
+    overseer: OverSeer
     clue_critiques: ClueCritiques
     expected_score: int
     ground_truth_score: int
     ground_truth_guesses: list[str] | EvaluationError
     comparisons_performed: int
+    deciding_critique: Critique | None = None
 
     @staticmethod
     def from_evaluation(
-        evaluation: Evaluation, expected_score: int, comparisons_performed: int
+        evaluation: Evaluation,
+        overseer: OverSeer,
+        expected_score: int,
+        comparisons_performed: int,
+        deciding_critique: Critique | None = None,
     ) -> "OverSight":
         return OverSight(
+            overseer=overseer,
             clue_critiques=evaluation.clue_critiques,
             expected_score=expected_score,
             ground_truth_score=evaluation.score,
             ground_truth_guesses=evaluation.guesses,
             comparisons_performed=comparisons_performed,
+            deciding_critique=deciding_critique,
         )
 
 

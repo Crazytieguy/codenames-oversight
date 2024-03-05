@@ -5,8 +5,8 @@ import typer
 from tqdm import tqdm
 
 from .evaluate_clue import evaluate_clue
-from .models import InferenceSample, PreferencePair
-from .oversight import OverSeer
+from .models import InferenceSample, OverSeer, PreferencePair
+from .oversight import oversee
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -38,8 +38,8 @@ def gen_preference_pair(
     )  # might not make sense with more clues
     game = clue_inference_sample.game
     oversights = (
-        overseer.oversee(evaluate_clue(game, clue_inference_sample.clue_critiques[0])),
-        overseer.oversee(evaluate_clue(game, clue_inference_sample.clue_critiques[1])),
+        oversee(overseer, evaluate_clue(game, clue_inference_sample.clue_critiques[0])),
+        oversee(overseer, evaluate_clue(game, clue_inference_sample.clue_critiques[1])),
     )
     return PreferencePair(
         game=game,
