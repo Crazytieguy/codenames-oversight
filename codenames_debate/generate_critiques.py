@@ -25,8 +25,8 @@ def main(
     model_dir: str,
     clues_file: Path,
     critiques_per_clue: int = 1,
-    batch_size: int = 32,
-    diversity_penalty: float = 1.5,
+    batch_size: int = 12,
+    diversity_penalty: float = 1.0,
 ):
     "Give some critiques"
     inference_samples = [
@@ -50,7 +50,7 @@ def main(
 
     for batch in tqdm(
         partition_all(batch_size // clues_per_game, inference_samples),
-        desc="Generating clues",
+        desc="Generating critiques",
         total=len(inference_samples) // (batch_size // clues_per_game),
     ):
         batch: list[InferenceSample]

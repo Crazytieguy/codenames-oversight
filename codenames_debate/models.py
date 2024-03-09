@@ -40,7 +40,7 @@ Targets: {', '.join(self.targets)}"""
             assert targets_line.startswith("Targets: ")
             clue = clue_line[len("Clue: ") :]
             targets = targets_line[len("Targets: ") :].split(", ")
-            return Clue(clue=clue, targets=targets)
+            return Clue(clue=clue, targets=[t.upper() for t in set(targets)])
         except Exception:
             logging.warning(f"Failed to parse clue: {response}")
             return ParseError(response=response)

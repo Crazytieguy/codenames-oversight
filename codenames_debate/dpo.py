@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 import torch
 import typer
@@ -13,7 +14,12 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
 @app.command()
-def main(dataset_file: str, model_dir: str, output_dir: str):
+def main(
+    dataset_file: str,
+    model_dir: str,
+    output_dir: str,
+    reference_model: Optional[str] = None,
+):
     data = [
         dpo_row
         for line in Path(dataset_file).read_text().splitlines()
@@ -30,7 +36,9 @@ def main(dataset_file: str, model_dir: str, output_dir: str):
         is_trainable=True,
         adapter_name="default",
     )
-    model.load_adapter(model_dir, adapter_name="reference", is_trainable=False)
+    if reference_model is None:
+        reference_model = model_dir
+    model.load_adapter(reference_model, adapter_name="reference", is_trainable=False)
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=8,  # critical for memory usage
@@ -40,8 +48,6 @@ def main(dataset_file: str, model_dir: str, output_dir: str):
         num_train_epochs=1,
         max_steps=-1,
         report_to=["tensorboard"],
-        save_steps=0.25,
-        save_total_limit=10,
         remove_unused_columns=False,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_dir, add_eos_token=False)

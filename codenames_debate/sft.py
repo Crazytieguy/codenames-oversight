@@ -59,8 +59,6 @@ def main(
         num_train_epochs=1,
         max_steps=-1,
         report_to=["tensorboard"],
-        save_steps=0.25,
-        save_total_limit=10,
     )
 
     peft_config = LoraConfig(

@@ -16,8 +16,8 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 @app.command()
 def main(
     model_dir: str,
-    clues_per_game: int = 1,
-    num_games: int = 64,
+    clues_per_game: int = 2,
+    num_games: int = 2048,
     batch_size: int = 32,
     diversity_penalty: float = 2.0,
 ):
