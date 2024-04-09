@@ -18,8 +18,8 @@ def main(
     model_dir: str,
     clues_per_game: int = 2,
     num_games: int = 2048,
-    batch_size: int = 32,
-    diversity_penalty: float = 2.0,
+    batch_size: int = 24,
+    diversity_penalty: float = 1.5,
 ):
     "Give some clues"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)

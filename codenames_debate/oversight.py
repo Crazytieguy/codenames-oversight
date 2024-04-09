@@ -95,6 +95,16 @@ def judge_overseer(evaluation: Evaluation) -> OverSight:
         if isinstance(critique, ParseError):
             logger.warning(f"Skipping critique due to parse error: {critique}")
             continue
+        if critique.bad_word not in evaluation.game.bad_words:
+            logger.warning(
+                f"Skipping critique with unknown bad word: {critique.bad_word}"
+            )
+            continue
+        if critique.target_good_word not in evaluation.clue_critiques.clue.targets:
+            logger.warning(
+                f"Skipping critique with unknown target good word: {critique.target_good_word}"
+            )
+            continue
         order = compare_word_pair(
             evaluation, critique.target_good_word, critique.bad_word
         )

@@ -5,7 +5,7 @@ import typer
 from tqdm import tqdm
 
 from .evaluate_clue import evaluate_clue
-from .models import InferenceSample, OverSeer, PreferencePair
+from .models import InferenceSample, OverSeer, PreferenceSet
 from .oversight import oversee
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -23,25 +23,26 @@ def main(
         for line in clue_dataset.read_text().splitlines()
     ]
     with ThreadPoolExecutor(max_workers=concurrency) as ex:
-        pairs = [ex.submit(gen_preference_pair, sample, overseer) for sample in data]
-        for pair in tqdm(
-            as_completed(pairs), desc="Generating evaluations", total=len(pairs)
+        preference_sets = [
+            ex.submit(gen_preference_set, sample, overseer) for sample in data
+        ]
+        for preference_set in tqdm(
+            as_completed(preference_sets),
+            desc="Overseeing",
+            total=len(preference_sets),
         ):
-            print(pair.result().model_dump_json())
+            print(preference_set.result().model_dump_json())
 
 
-def gen_preference_pair(
+def gen_preference_set(
     clue_inference_sample: InferenceSample, overseer: OverSeer
-) -> PreferencePair:
-    assert (
-        len(clue_inference_sample.clue_critiques) == 2
-    )  # might not make sense with more clues
+) -> PreferenceSet:
     game = clue_inference_sample.game
-    oversights = (
-        oversee(overseer, evaluate_clue(game, clue_inference_sample.clue_critiques[0])),
-        oversee(overseer, evaluate_clue(game, clue_inference_sample.clue_critiques[1])),
-    )
-    return PreferencePair(
+    oversights = [
+        oversee(overseer, evaluate_clue(game, c))
+        for c in clue_inference_sample.clue_critiques
+    ]
+    return PreferenceSet(
         game=game,
         oversights=oversights,
     )

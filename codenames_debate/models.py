@@ -129,19 +129,19 @@ class OverSight(BaseModel):
         )
 
 
-class PreferencePair(BaseModel):
+class PreferenceSet(BaseModel):
     game: Game
-    oversights: tuple[OverSight, OverSight]
+    oversights: list[OverSight]
 
     def dpo_row(self) -> dict | None:
-        if self.oversights[0].expected_score == self.oversights[1].expected_score:
+        if len({o.expected_score for o in self.oversights}) == 1:
             return None
         prompt = f"{self.game}\n\nClue: "
-        rejected, chosen = sorted(self.oversights, key=lambda e: e.expected_score)
+        oversights = sorted(self.oversights, key=lambda e: e.expected_score)
         return {
             "prompt": prompt,
-            "rejected": format_clue_for_dpo(rejected.clue_critiques.clue),
-            "chosen": format_clue_for_dpo(chosen.clue_critiques.clue),
+            "rejected": format_clue_for_dpo(oversights[0].clue_critiques.clue),
+            "chosen": format_clue_for_dpo(oversights[1].clue_critiques.clue),
         }
 
 

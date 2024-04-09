@@ -51,12 +51,15 @@ def main(
         for task in tqdm(
             as_completed(tasks), total=num_samples, desc="Generating samples"
         ):
-            sample = task.result()
-            if sample is not None:
-                print(sample.model_dump_json())
+            try:
+                sample = task.result()
+                if sample is not None:
+                    print(sample.model_dump_json())
+            except Exception:
+                logger.exception("Error generating sample")
 
 
-def gen_sample() -> SFTSample | None:
+def gen_sample() -> SFTSample:
     game = generate_game()
     prompt = PROMPT.format(game=str(game).replace("Good", "Blue").replace("Bad", "Red"))
     chat_completion = openai_client.chat.completions.create(
@@ -72,13 +75,11 @@ def gen_sample() -> SFTSample | None:
     clue = Clue.model_validate_json(clue)
     clue.clue = clue.clue.title()
     if clue.clue.upper() in game.good_words + game.bad_words:
-        logger.warning(f"Invalid clue: {clue.clue}")
-        return None
+        raise ValueError(f"Invalid clue: {clue.clue}")
     for i, target in enumerate(clue.targets):
         clue.targets[i] = target.upper()
         if target.upper() not in game.good_words:
-            logger.warn(f"Invalid target word: {target}")
-            return None
+            raise ValueError(f"Invalid target word: {target}")
 
     return with_random_critique(game, clue)
 

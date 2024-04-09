@@ -8,7 +8,7 @@ from peft import AutoPeftModelForCausalLM  # type: ignore
 from transformers import AutoTokenizer, BitsAndBytesConfig, TrainingArguments
 from trl import DPOTrainer
 
-from .models import PreferencePair
+from .models import PreferenceSet
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -23,7 +23,7 @@ def main(
     data = [
         dpo_row
         for line in Path(dataset_file).read_text().splitlines()
-        if (dpo_row := PreferencePair.model_validate_json(line).dpo_row()) is not None
+        if (dpo_row := PreferenceSet.model_validate_json(line).dpo_row()) is not None
     ]
     dataset = Dataset.from_list(data)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -43,7 +43,7 @@ def main(
         output_dir=output_dir,
         per_device_train_batch_size=8,  # critical for memory usage
         gradient_accumulation_steps=2,
-        learning_rate=1e-5,
+        learning_rate=5e-6,
         logging_steps=1,
         num_train_epochs=1,
         max_steps=-1,
@@ -57,7 +57,7 @@ def main(
         model_adapter_name="default",
         ref_adapter_name="reference",
         args=training_args,
-        beta=0.3,
+        beta=0.2,
         train_dataset=dataset,  # type: ignore
         tokenizer=tokenizer,
         max_length=128,
