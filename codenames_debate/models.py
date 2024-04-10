@@ -99,6 +99,7 @@ class Evaluation(BaseModel):
 class OverSeer(str, Enum):
     ROBUST = "robust"
     JUDGE = "judge"
+    NEGLECT_LAST_N = "neglect_last_n"
 
 
 class OverSight(BaseModel):

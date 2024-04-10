@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Optional
 
 import typer
 from tqdm import tqdm
@@ -16,6 +17,7 @@ def main(
     clue_dataset: Path,
     overseer: OverSeer = OverSeer.ROBUST,
     concurrency: int = 32,
+    neglect_words: Optional[int] = None,
 ):
     "Generate a DPO dataset from a dataset of clue pairs"
     data = [
@@ -24,7 +26,8 @@ def main(
     ]
     with ThreadPoolExecutor(max_workers=concurrency) as ex:
         preference_sets = [
-            ex.submit(gen_preference_set, sample, overseer) for sample in data
+            ex.submit(gen_preference_set, sample, overseer, neglect_words)
+            for sample in data
         ]
         for preference_set in tqdm(
             as_completed(preference_sets),
@@ -35,11 +38,13 @@ def main(
 
 
 def gen_preference_set(
-    clue_inference_sample: InferenceSample, overseer: OverSeer
+    clue_inference_sample: InferenceSample,
+    overseer: OverSeer,
+    neglect_words: int | None = None,
 ) -> PreferenceSet:
     game = clue_inference_sample.game
     oversights = [
-        oversee(overseer, evaluate_clue(game, c))
+        oversee(overseer, evaluate_clue(game, c), neglect_words)
         for c in clue_inference_sample.clue_critiques
     ]
     return PreferenceSet(

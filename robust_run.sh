@@ -1,3 +1,4 @@
+set -e
 source /ext3/env.sh
 export $(cat .env)
 experiment_name=robust-$(date "+%Y-%m-%d_%H-%M-%S")

@@ -13,11 +13,17 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def oversee(overseer: OverSeer, evaluation: Evaluation) -> OverSight:
+def oversee(
+    overseer: OverSeer, evaluation: Evaluation, neglect_words: int | None = None
+) -> OverSight:
     if overseer == OverSeer.ROBUST:
         return robust_overseer(evaluation)
     elif overseer == OverSeer.JUDGE:
         return judge_overseer(evaluation)
+    elif overseer == OverSeer.NEGLECT_LAST_N:
+        if neglect_words is None:
+            raise ValueError("Must specify number of words to neglect")
+        return neglect_last_n_overseer(evaluation, neglect_words)
     raise NotImplementedError(f"Unknown overseer: {overseer}")
 
 
@@ -67,6 +73,37 @@ def robust_overseer(evaluation: Evaluation) -> OverSight:
         if order == GuessOrder.BEFORE:
             worst_target = target
     for word in evaluation.game.bad_words:
+        order = compare_word_pair(evaluation, worst_target, word)
+        comparisons_performed += 1
+        if order == GuessOrder.AFTER:
+            return OverSight.from_evaluation(
+                evaluation,
+                OverSeer.ROBUST,
+                0,
+                comparisons_performed,
+                Critique(bad_word=word, target_good_word=worst_target),
+            )
+    return OverSight.from_evaluation(
+        evaluation,
+        OverSeer.ROBUST,
+        len(evaluation.clue_critiques.clue.targets),
+        comparisons_performed,
+    )
+
+
+def neglect_last_n_overseer(evaluation: Evaluation, neglect_words: int) -> OverSight:
+    "An overseer that makes all the necessary comparisons except the last n bad words"
+    if (oversight := basic_validation(OverSeer.NEGLECT_LAST_N, evaluation)) is not None:
+        return oversight
+    assert not isinstance(evaluation.clue_critiques.clue, ParseError)
+    comparisons_performed = 0
+    worst_target = evaluation.clue_critiques.clue.targets[0]
+    for target in evaluation.clue_critiques.clue.targets[1:]:
+        order = compare_word_pair(evaluation, worst_target, target)
+        comparisons_performed += 1
+        if order == GuessOrder.BEFORE:
+            worst_target = target
+    for word in evaluation.game.bad_words[:-neglect_words]:
         order = compare_word_pair(evaluation, worst_target, word)
         comparisons_performed += 1
         if order == GuessOrder.AFTER:

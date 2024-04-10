@@ -18,6 +18,7 @@ def main(dataset_folder: Path):
     ]
     df = pd.DataFrame(data)
     df["overseer_mistake"] = df["expected_score"] > df["ground_truth_score"]
+    df["clue_invalid"] = df["ground_truth_score"] == -1
     print(
         df.groupby("phase")
         .aggregate(
@@ -25,8 +26,9 @@ def main(dataset_folder: Path):
             mean_expected_score=("expected_score", "mean"),
             comparisons_performed=("comparisons_performed", "sum"),
             overseer_mistakes=("overseer_mistake", "mean"),
+            mean_clue_invalid=("clue_invalid", "mean"),
         )
-        .to_csv()
+        # .to_csv()
     )
 
 
