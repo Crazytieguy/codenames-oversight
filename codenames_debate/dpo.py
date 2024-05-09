@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import torch
 import typer
@@ -19,11 +19,20 @@ def main(
     model_dir: str,
     output_dir: str,
     reference_model: Optional[str] = None,
+    adversarial_alpha: Annotated[
+        float,
+        typer.Argument(
+            help="How much to reward the model for performing poorly on the ground truth."
+        ),
+    ] = 0.0,
 ):
     data = [
         dpo_row
-        for line in Path(dataset_file).read_text().splitlines()
-        if (dpo_row := PreferenceSet.model_validate_json(line).dpo_row()) is not None
+        for p_set in map(
+            PreferenceSet.model_validate_json,
+            Path(dataset_file).read_text().splitlines(),
+        )
+        if (dpo_row := p_set.dpo_row(adversarial_alpha)) is not None
     ]
     dataset = Dataset.from_list(data)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)

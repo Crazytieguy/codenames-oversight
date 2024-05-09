@@ -2,22 +2,20 @@ from pathlib import Path
 
 import torch
 import typer
+from outlines.generate import regex  # type: ignore
+from outlines.models.transformers import Transformers
+from outlines.samplers import multinomial
 from peft import AutoPeftModelForCausalLM  # type: ignore
-from toolz.itertoolz import partition_all
+from toolz.itertoolz import partition_all, zip_longest
 from tqdm import tqdm
-from transformers import (
-    AutoTokenizer,
-    BitsAndBytesConfig,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-from .models import (
-    Clue,
-    Critique,
-    Game,
-    InferenceSample,
-)
+from .models import WORDS, Clue, Critique, Game, InferenceSample
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
+
+GAME_WORD = f"(?:{'|'.join(WORDS)})"
+GENERATION_PATTERN = rf"Critique: {GAME_WORD} > {GAME_WORD}\n"
 
 
 @app.command()
@@ -26,7 +24,6 @@ def main(
     clues_file: Path,
     critiques_per_clue: int = 1,
     batch_size: int = 12,
-    diversity_penalty: float = 1.0,
 ):
     "Give some critiques"
     inference_samples = [
@@ -36,17 +33,30 @@ def main(
     clues_per_game = len(inference_samples[0].clue_critiques)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
-    model = AutoPeftModelForCausalLM.from_pretrained(
-        model_dir,
-        quantization_config=quantization_config,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-    )
+    try:
+        model = AutoPeftModelForCausalLM.from_pretrained(
+            model_dir,
+            quantization_config=quantization_config,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            output_attentions=True,
+        )
+    except ValueError:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_dir,
+            quantization_config=quantization_config,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            output_attentions=True,
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_dir, add_eos_token=False, padding_side="left"
     )
     tokenizer.pad_token = tokenizer.eos_token
+    model = Transformers(model, tokenizer)  # type: ignore
+    sampler = multinomial(critiques_per_clue)
+    generator = regex(model, GENERATION_PATTERN, sampler)
 
     for batch in tqdm(
         partition_all(batch_size // clues_per_game, inference_samples),
@@ -58,41 +68,20 @@ def main(
             format_prompt(sample.game, clue_critique.clue)
             for sample in batch
             for clue_critique in sample.clue_critiques
-            if isinstance(clue_critique.clue, Clue)
         ]
-        inputs = tokenizer(prompts, return_tensors="pt", padding=True).to(model.device)
-        if critiques_per_clue > 1:
-            outputs = model.generate(
-                **inputs,
-                do_sample=False,
-                temperature=None,
-                top_p=None,
-                max_new_tokens=32,
-                num_beams=critiques_per_clue,
-                num_beam_groups=critiques_per_clue,
-                diversity_penalty=diversity_penalty,
-                num_return_sequences=critiques_per_clue,
-            )
-        else:
-            outputs = model.generate(**inputs, max_new_tokens=32)
-        output_texts = tokenizer.batch_decode(
-            outputs,
-            skip_special_tokens=True,
-        )
-        read_outputs = 0
-        for sample in batch:
-            for clue_critique in sample.clue_critiques:
-                if isinstance(clue_critique.clue, Clue):
-                    clue_outputs = output_texts[
-                        read_outputs : read_outputs + critiques_per_clue
-                    ]
-                    read_outputs += critiques_per_clue
-                    clue_critique.critiques = [
-                        Critique.parse_response(output.split("\n\n")[-1])
-                        for output in clue_outputs
-                    ]
+        outputs = generator(prompts, max_tokens=32, stop_at="\n")
+        if critiques_per_clue == 1:
+            outputs = [[output] for output in outputs]  # type: ignore
+        for sample, game_outputs in zip_longest(
+            batch, partition_all(clues_per_game, outputs)
+        ):
+            for clue_critiques, clue_outputs in zip_longest(
+                sample.clue_critiques, game_outputs
+            ):
+                clue_critiques.critiques = list(
+                    map(Critique.parse_response, clue_outputs)
+                )
             print(sample.model_dump_json())
-        assert read_outputs == len(output_texts)
 
 
 def format_prompt(game: Game, clue: Clue) -> str:
@@ -101,7 +90,7 @@ def format_prompt(game: Game, clue: Clue) -> str:
 
 {clue}
 
-Critique:"""
+"""
 
 
 if __name__ == "__main__":

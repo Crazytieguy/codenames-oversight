@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=codenames_debate_dpo
+#SBATCH --job-name=codenames_debate_judge
 #SBATCH --open-mode=append
 #SBATCH --output=job_outputs/%x_%j.out
 #SBATCH --error=job_outputs/%x_%j.err

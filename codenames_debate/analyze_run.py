@@ -12,21 +12,18 @@ app = typer.Typer()
 def main(dataset_folder: Path):
     data = [
         oversight.model_dump() | {"phase": int(file.stem[-1])}
-        for file in dataset_folder.glob("preference-*.jsonl")
+        for file in dataset_folder.glob("eval-preference-sets-*.jsonl")
         for line in file.read_text().splitlines()
         for oversight in PreferenceSet.model_validate_json(line).oversights
     ]
     df = pd.DataFrame(data)
     df["overseer_mistake"] = df["expected_score"] > df["ground_truth_score"]
-    df["clue_invalid"] = df["ground_truth_score"] == -1
     print(
-        df.groupby("phase")
-        .aggregate(
+        df.groupby("phase").aggregate(
             mean_ground_truth_score=("ground_truth_score", "mean"),
             mean_expected_score=("expected_score", "mean"),
             comparisons_performed=("comparisons_performed", "sum"),
             overseer_mistakes=("overseer_mistake", "mean"),
-            mean_clue_invalid=("clue_invalid", "mean"),
         )
         # .to_csv()
     )

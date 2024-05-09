@@ -13,3 +13,5 @@ pytest
 tiktoken
 tensorboard
 pandas
+backoff
+outlines

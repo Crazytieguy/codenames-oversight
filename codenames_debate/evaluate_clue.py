@@ -2,10 +2,11 @@ import itertools
 import logging
 import random
 
+import backoff
 import tiktoken
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
-from .models import Clue, ClueCritiques, Evaluation, EvaluationError, Game, ParseError
+from .models import Clue, ClueCritiques, Evaluation, EvaluationError, Game
 
 openai_client = OpenAI()
 openai_tokenizers = {
@@ -30,13 +31,6 @@ def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
     I've decided not to allow ending the turn prematurely, for simplicity.
     """
     clue = clue_critiques.clue
-    if isinstance(clue, ParseError):
-        return Evaluation(
-            game=game,
-            clue_critiques=clue_critiques,
-            score=-1,
-            guesses=[],
-        )
     try:
         score, guesses = evaluate_clue_inner(game, clue)
         return Evaluation(
@@ -58,8 +52,7 @@ def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
 def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
     remaining_words = game.good_words + game.bad_words
     if clue.clue.upper() in remaining_words:
-        # Invalid clue
-        return -1, []
+        raise ValueError(f"Clue word is in the game: {clue.clue=}")
 
     random.shuffle(remaining_words)
 
@@ -80,14 +73,8 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
         word_tokens = [tokenizer.encode(word) for word in remaining_words]
         allowed_tokens = list(set(itertools.chain.from_iterable(word_tokens)))
 
-        chat_completion = openai_client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            # This should help the model returns a valid guess
-            logit_bias={k: logit_bias for k in allowed_tokens},  # type: ignore
-            temperature=0.0,
-            max_tokens=max(len(tokens) for tokens in word_tokens),
-            timeout=10,
+        chat_completion = chat_completion_with_backoff(
+            model, logit_bias, prompt, word_tokens, allowed_tokens
         )
 
         guess = chat_completion.choices[0].message.content.strip(" '\"").upper()  # type: ignore
@@ -124,3 +111,22 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
 
     score = len(guesses) - 1  # the last word is a bad word, thus doesn't count
     return score, guesses
+
+
+@backoff.on_exception(backoff.expo, RateLimitError, max_time=60)
+def chat_completion_with_backoff(
+    model: str,
+    logit_bias: float,
+    prompt: str,
+    word_tokens: list[list[int]],
+    allowed_tokens: list[int],
+):
+    return openai_client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        # This should help the model returns a valid guess
+        logit_bias={k: logit_bias for k in allowed_tokens},  # type: ignore
+        temperature=0.0,
+        max_tokens=max(len(tokens) for tokens in word_tokens),
+        timeout=10,
+    )

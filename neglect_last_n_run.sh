@@ -2,21 +2,22 @@ set -e
 source /ext3/env.sh
 export $(cat .env)
 neglect_words=$1
+adversarial_alpha=${2:-0.0}
 echo "Neglecting last $neglect_words words"
-experiment_name=neglect-last-$neglect_words-$(date "+%Y-%m-%d_%H-%M-%S")
+echo "Adversarial alpha: $adversarial_alpha"
+experiment_name=neglect-last-$neglect_words-alpha-$adversarial_alpha-$(date "+%Y-%m-%d_%H-%M-%S")
 data_dir=data/$experiment_name
 models_dir=models/$experiment_name
 mkdir -p $data_dir
 mkdir -p $models_dir
 cp -r models/llama-7b-cluer-with-targets $models_dir/cluer-0
-cp data/clue-triples-0.jsonl $data_dir/clues-0.jsonl
-for i in {0..3}
+python -m codenames_debate.generate_clues $models_dir/cluer-0 --num-games=512 --clues-per-game=1 > $data_dir/eval-clues-0.jsonl
+python -m codenames_debate.generate_dpo_dataset $data_dir/eval-clues-0.jsonl --concurrency=16 --overseer neglect_last_n --neglect-words $neglect_words > $data_dir/eval-preference-sets-0.jsonl
+for i in {0..4}
 do
-    if [ "$i" -ne 0 ]; then
-        python -m codenames_debate.generate_clues $models_dir/cluer-$i --num-games=2048 --clues-per-game=3 > $data_dir/clues-$i.jsonl
-    fi
-    python -m codenames_debate.generate_dpo_dataset $data_dir/clues-$i.jsonl --concurrency=8 --overseer neglect_last_n --neglect-words $neglect_words > $data_dir/preference-pairs-$i.jsonl
-    python -m codenames_debate.dpo $data_dir/preference-pairs-$i.jsonl $models_dir/cluer-$i $models_dir/cluer-$((i + 1))
+    python -m codenames_debate.generate_clues $models_dir/cluer-$i --num-games=3072 --clues-per-game=3 --diversity-penalty=$(echo "1.6 - $i * 0.15" | bc) > $data_dir/clues-$i.jsonl
+    python -m codenames_debate.generate_dpo_dataset $data_dir/clues-$i.jsonl --concurrency=16 --overseer neglect_last_n --neglect-words $neglect_words > $data_dir/preference-sets-$i.jsonl
+    python -m codenames_debate.dpo $data_dir/preference-sets-$i.jsonl $models_dir/cluer-$i $models_dir/cluer-$((i + 1)) $adversarial_alpha
+    python -m codenames_debate.generate_clues $models_dir/cluer-$((i + 1)) --num-games=512 --clues-per-game=1 > $data_dir/eval-clues-$((i + 1)).jsonl
+    python -m codenames_debate.generate_dpo_dataset $data_dir/eval-clues-$((i + 1)).jsonl --concurrency=16 --overseer neglect_last_n --neglect-words $neglect_words > $data_dir/eval-preference-sets-$((i + 1)).jsonl
 done
-python -m codenames_debate.generate_clues $models_dir/cluer-4 --num-games=1024 --clues-per-game=1 > $data_dir/clues-4.jsonl
-python -m codenames_debate.generate_dpo_dataset $data_dir/clues-4.jsonl --concurrency=8 --overseer neglect_last_n --neglect-words $neglect_words > $data_dir/preference-pairs-4.jsonl
