@@ -21,8 +21,8 @@ For more detail, see [the project doc](https://docs.google.com/document/d/1t9sBD
 - [x] Fine tune an open source LLM on the GPT-4 clues
 - [x] Get GPT-3.5 to play as the receiver of the clue (ground truth clue reward)
 - [x] POC of improving clue quality with DPO
-- [ ] Implement "RLHF" using a simulated overseer
-- [ ] Implement Debate/Critiques (they look pretty much the same here)
-- [ ] Insert a variety of flaws into the overseer
-- [ ] Add a meta-level adversarial incentive
+- [x] Implement "RLHF" using a simulated overseer
+- [x] Implement Debate/Critiques (they look pretty much the same here)
+- [x] Insert a variety of flaws into the overseer
+- [x] Add a meta-level adversarial incentive
 - [ ] Generate a huge matrix of experiment parameters and run all of them

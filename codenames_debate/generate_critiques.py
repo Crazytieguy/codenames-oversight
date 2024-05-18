@@ -1,4 +1,4 @@
-from pathlib import Path
+import sys
 
 import torch
 import typer
@@ -10,32 +10,30 @@ from toolz.itertoolz import partition_all, zip_longest
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-from .models import WORDS, Clue, Critique, Game, InferenceSample
+from .models import GAME_WORDS, Clue, Critique, Game, InferenceSample
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
-GAME_WORD = f"(?:{'|'.join(WORDS)})"
+GAME_WORD = f"(?:{'|'.join(GAME_WORDS)})"
 GENERATION_PATTERN = rf"Critique: {GAME_WORD} > {GAME_WORD}\n"
 
 
 @app.command()
 def main(
-    model_dir: str,
-    clues_file: Path,
+    model_name_or_path: str = "meta-llama/Llama-2-7b-hf",
     critiques_per_clue: int = 1,
     batch_size: int = 12,
 ):
     "Give some critiques"
     inference_samples = [
-        InferenceSample.model_validate_json(line)
-        for line in clues_file.read_text().splitlines()
+        InferenceSample.model_validate_json(line) for line in sys.stdin
     ]
     clues_per_game = len(inference_samples[0].clue_critiques)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     try:
         model = AutoPeftModelForCausalLM.from_pretrained(
-            model_dir,
+            model_name_or_path,
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.bfloat16,
@@ -43,7 +41,7 @@ def main(
         )
     except ValueError:
         model = AutoModelForCausalLM.from_pretrained(
-            model_dir,
+            model_name_or_path,
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.bfloat16,
@@ -51,7 +49,7 @@ def main(
         )
 
     tokenizer = AutoTokenizer.from_pretrained(
-        model_dir, add_eos_token=False, padding_side="left"
+        model_name_or_path, add_eos_token=False, padding_side="left"
     )
     tokenizer.pad_token = tokenizer.eos_token
     model = Transformers(model, tokenizer)  # type: ignore

@@ -66,7 +66,7 @@ def main(
         model_adapter_name="default",
         ref_adapter_name="reference",
         args=training_args,
-        beta=0.2,
+        beta=0.1,
         train_dataset=dataset,  # type: ignore
         tokenizer=tokenizer,
         max_length=128,

@@ -106,7 +106,8 @@ def format_cluer_prompt(sample_raw: dict) -> dict:
     sample = SFTSample.model_validate(sample_raw)
     text = f"""{sample.game}
 
-{sample.clue}"""
+{sample.clue}
+"""
     return {"text": text}
 
 
@@ -116,7 +117,8 @@ def format_critiquer_prompt(sample_raw: dict) -> dict:
 
 {sample.clue}
 
-{sample.critique}"""
+{sample.critique}
+"""
     return {"text": text}
 
 

@@ -1,17 +1,23 @@
 set -e
 source /ext3/env.sh
 export $(cat .env)
-experiment_name=robust-$(date "+%Y-%m-%d_%H-%M-%S")
+games_per_phase=$1
+experiment_name=robust-$games_per_phase-games-per-phase-$(date "+%Y-%m-%d_%H-%M-%S")
 data_dir=data/$experiment_name
 models_dir=models/$experiment_name
 mkdir -p $data_dir
 mkdir -p $models_dir
-cp -r models/llama-7b-cluer-with-targets $models_dir/cluer-0
+cp -r models/llama-7b-random-cluer $models_dir/cluer-0
+cp data/training-games.jsonl $data_dir/
+cp data/eval-clues-0.jsonl $data_dir/
+python -m codenames_debate.generate_dpo_dataset $data_dir/eval-clues-0.jsonl --concurrency=16 --overseer robust > $data_dir/eval-preference-sets-0.jsonl
 for i in {0..6}
 do
-    python -m codenames_debate.generate_clues $models_dir/cluer-$i --num-games=2048 --diversity-penalty=$(echo "scale=1; 1.8 - 0.2 * $i" | bc) > $data_dir/clues-$i.jsonl
-    python -m codenames_debate.generate_dpo_dataset $data_dir/clues-$i.jsonl --overseer robust > $data_dir/preference-pairs-$i.jsonl
-    python -m codenames_debate.dpo $data_dir/preference-pairs-$i.jsonl $models_dir/cluer-$i $models_dir/cluer-$((i + 1))
+    head -n $games_per_phase $data_dir/training-games.jsonl | python -m codenames_debate.generate_clues --model-name-or-path=$models_dir/cluer-$i --clues-per-game=3 > $data_dir/clues-$i.jsonl
+    # sed -i "1,${games_per_phase}d" $data_dir/training-games.jsonl
+    sed -i "1,5120d" $data_dir/training-games.jsonl
+    python -m codenames_debate.generate_dpo_dataset $data_dir/clues-$i.jsonl --concurrency=16 --overseer robust > $data_dir/preference-sets-$i.jsonl
+    python -m codenames_debate.dpo $data_dir/preference-sets-$i.jsonl $models_dir/cluer-$i $models_dir/cluer-$((i + 1))
+    python -m codenames_debate.generate_clues --model-name-or-path=$models_dir/cluer-$((i + 1)) --clues-per-game=1 < data/evaluation-games.jsonl > $data_dir/eval-clues-$((i + 1)).jsonl
+    python -m codenames_debate.generate_dpo_dataset $data_dir/eval-clues-$((i + 1)).jsonl --concurrency=16 --overseer robust > $data_dir/eval-preference-sets-$((i + 1)).jsonl
 done
-python -m codenames_debate.generate_clues $models_dir/cluer-7 --num-games=1024 --clues-per-game=1 > $data_dir/clues-7.jsonl
-python -m codenames_debate.generate_dpo_dataset $data_dir/clues-7.jsonl --overseer robust > $data_dir/preference-pairs-7.jsonl

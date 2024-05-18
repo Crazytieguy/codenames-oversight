@@ -4,7 +4,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-WORDS = Path("words.txt").read_text().splitlines()
+CLUE_WORDS = Path("clue-words.txt").read_text().splitlines()
+GAME_WORDS = Path("game-words.txt").read_text().splitlines()
 
 
 class Game(BaseModel):
@@ -171,7 +172,7 @@ class PreferenceSet(BaseModel):
 
 
 def generate_game(num_words: int = 20) -> Game:
-    words = random.sample(WORDS, num_words)
+    words = random.sample(GAME_WORDS, num_words)
     good_words, bad_words = (words[: num_words // 2], words[num_words // 2 :])
     return Game(
         good_words=good_words,

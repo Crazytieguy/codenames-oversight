@@ -22,8 +22,8 @@ def main(dataset_folder: Path):
         df.groupby("phase").aggregate(
             mean_ground_truth_score=("ground_truth_score", "mean"),
             mean_expected_score=("expected_score", "mean"),
-            comparisons_performed=("comparisons_performed", "sum"),
-            overseer_mistakes=("overseer_mistake", "mean"),
+            # comparisons_performed=("comparisons_performed", "sum"),
+            # overseer_mistakes=("overseer_mistake", "mean"),
         )
         # .to_csv()
     )
