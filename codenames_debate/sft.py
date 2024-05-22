@@ -107,6 +107,7 @@ def format_cluer_prompt(sample_raw: dict) -> dict:
     text = f"""{sample.game}
 
 {sample.clue}
+
 """
     return {"text": text}
 

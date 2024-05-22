@@ -12,6 +12,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from .models import (
+    CLUE_WORDS,
     GAME_WORDS,
     Clue,
     ClueCritiques,
@@ -22,10 +23,11 @@ from .models import (
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
-CAPITAL_GAME_WORD = f"(?:{"|".join(GAME_WORDS)})"
-TITLE_GAME_WORD = f"(?:{"|".join(w.title() for w in GAME_WORDS)})"
-CLUE_PATTERN = rf"Clue: (?!{TITLE_GAME_WORD})[A-Z][a-z]*\n"
-TARGETS_PATTERN = rf"Targets: {CAPITAL_GAME_WORD}(?:, {CAPITAL_GAME_WORD})*\n"
+GAME_WORD = f"(?:{"|".join(GAME_WORDS)})"
+CLUE_WORD = f"(?:{"|".join(CLUE_WORDS)})"
+CLUE_PATTERN = rf"Clue: {CLUE_WORD}\n"
+TARGETS_PATTERN = rf"Targets: {GAME_WORD}(?:, {GAME_WORD})*\n"
+FULL_PATTERN = rf"{CLUE_PATTERN}{TARGETS_PATTERN}\n"
 
 
 @app.command()
@@ -33,7 +35,7 @@ def main(
     model_name_or_path: str = "meta-llama/Llama-2-7b-hf",
     random_games: Optional[int] = None,
     clues_per_game: int = 2,
-    batch_size: int = 8,
+    batch_size: int = 16,
 ):
     "Give some clues"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -61,8 +63,7 @@ def main(
     tokenizer.pad_token = tokenizer.eos_token
     model = Transformers(model, tokenizer)  # type: ignore
     sampler = multinomial(clues_per_game)
-    clue_generator = regex(model, CLUE_PATTERN, sampler)
-    targets_generator = regex(model, TARGETS_PATTERN)
+    generator = regex(model, FULL_PATTERN, sampler)
     rng = torch.Generator(device="cuda")
     rng.manual_seed(42)
 
@@ -76,30 +77,12 @@ def main(
         desc="Generating clues",
         total=len(games) // batch_size,
     ):
-        clue_prompts = [f"{game}\n\n" for game in batch]
-        clue_outputs = clue_generator(
-            clue_prompts, max_tokens=10, stop_at="\n", rng=rng
-        )
+        prompts = [f"{game}\n\n" for game in batch]
+        outputs = generator(prompts, max_tokens=64, stop_at="\n\n", rng=rng)
         if clues_per_game == 1:
-            clue_outputs = [[output] for output in clue_outputs]  # type: ignore
-        clue_outputs = [
-            [output.strip() + "\n" for output in outputs] for outputs in clue_outputs
-        ]
-        target_prompts = [
-            f"{clue_prompt}{output}"
-            for clue_prompt, outputs in zip(clue_prompts, clue_outputs)
-            for output in outputs
-        ]
-        target_outputs = targets_generator(
-            target_prompts, max_tokens=32, stop_at="\n", rng=rng
-        )
-        for game, clue_outputs, target_outputs in zip(
-            batch, clue_outputs, partition_all(clues_per_game, target_outputs)
-        ):  # type: ignore
-            clues = [
-                Clue.parse_response(clue_output + target_output)
-                for clue_output, target_output in zip(clue_outputs, target_outputs)
-            ]
+            outputs = [[output] for output in outputs]  # type: ignore
+        for game, outputs in zip(batch, outputs):  # type: ignore
+            clues = [Clue.parse_response(output) for output in outputs]
             sample = InferenceSample(
                 game=game, clue_critiques=[ClueCritiques(clue=clue) for clue in clues]
             )
