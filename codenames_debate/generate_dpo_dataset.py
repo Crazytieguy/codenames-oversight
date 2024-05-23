@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -16,7 +15,6 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 def main(
     clue_dataset: Path,
     overseer: OverSeer = OverSeer.ROBUST,
-    concurrency: int = 32,
     neglect_words: Optional[int] = None,
 ):
     "Generate a DPO dataset from a dataset of clue pairs"
@@ -24,17 +22,9 @@ def main(
         InferenceSample.model_validate_json(line)
         for line in clue_dataset.read_text().splitlines()
     ]
-    with ThreadPoolExecutor(max_workers=concurrency) as ex:
-        preference_sets = [
-            ex.submit(gen_preference_set, sample, overseer, neglect_words)
-            for sample in data
-        ]
-        for preference_set in tqdm(
-            as_completed(preference_sets),
-            desc="Overseeing",
-            total=len(preference_sets),
-        ):
-            print(preference_set.result().model_dump_json())
+    for sample in tqdm(data, desc="Overseeing"):
+        preference_set = gen_preference_set(sample, overseer, neglect_words)
+        print(preference_set.model_dump_json())
 
 
 def gen_preference_set(

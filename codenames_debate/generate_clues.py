@@ -36,6 +36,7 @@ def main(
     random_games: Optional[int] = None,
     clues_per_game: int = 2,
     batch_size: int = 16,
+    temperature: Optional[float] = None,
 ):
     "Give some clues"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -62,7 +63,7 @@ def main(
     )
     tokenizer.pad_token = tokenizer.eos_token
     model = Transformers(model, tokenizer)  # type: ignore
-    sampler = multinomial(clues_per_game)
+    sampler = multinomial(clues_per_game, temperature=temperature)
     generator = regex(model, FULL_PATTERN, sampler)
     rng = torch.Generator(device="cuda")
     rng.manual_seed(42)

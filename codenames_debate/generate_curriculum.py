@@ -6,7 +6,7 @@ from .models import generate_game
 
 
 def generate_curriculum(
-    dataset_size: int, min_size: int = 6, max_size: int = 26, n: int = 9, p: float = 0.5
+    dataset_size: int, min_size: int = 4, max_size: int = 20, n: int = 6, p: float = 0.5
 ):
     for i in range(dataset_size):
         floor = min_size + (max_size - min_size - n) * (i / dataset_size)

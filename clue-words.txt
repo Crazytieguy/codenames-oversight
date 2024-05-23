@@ -260,7 +260,6 @@ Banjul
 Banquet
 Barbecue
 Barista
-Bark
 Barn
 Barnacle
 Baron
@@ -447,7 +446,6 @@ Capital Markets
 Capricious
 Captain
 Caracas
-Card
 Cardiff
 Care
 Careful
@@ -455,7 +453,6 @@ Carefulness
 Caring
 Carl Sagan
 Carpenter
-Carrot
 Cary Grant
 Castle
 Castries

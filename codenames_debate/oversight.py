@@ -13,16 +13,17 @@ def oversee(
         return oversight
     if evaluation.guesses == []:
         raise ValueError("Evaluation has no guesses")
-    if overseer == OverSeer.ROBUST:
-        robust_overseer(evaluation.game, oversight)
-    elif overseer == OverSeer.JUDGE:
-        judge_overseer(evaluation.game, oversight)
-    elif overseer == OverSeer.NEGLECT_LAST_N:
-        if neglect_words is None:
-            raise ValueError("Must specify number of words to neglect")
-        neglect_last_n_overseer(evaluation.game, oversight, neglect_words)
-    else:
-        raise NotImplementedError(f"Unknown overseer: {overseer}")
+    match overseer:
+        case OverSeer.ROBUST:
+            robust_overseer(evaluation.game, oversight)
+        case OverSeer.JUDGE:
+            judge_overseer(evaluation.game, oversight)
+        case OverSeer.NEGLECT_LAST_N:
+            if neglect_words is None:
+                raise ValueError("Must specify number of words to neglect")
+            neglect_last_n_overseer(evaluation.game, oversight, neglect_words)
+        case _:
+            raise NotImplementedError(f"Unknown overseer: {overseer}")
     return oversight
 
 

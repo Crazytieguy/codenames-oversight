@@ -75,15 +75,11 @@ class InferenceSample(BaseModel):
     clue_critiques: list[ClueCritiques]
 
 
-class EvaluationError(BaseModel):
-    reason: str
-
-
 class Evaluation(BaseModel):
     game: Game
     clue_critiques: ClueCritiques
     score: int
-    guesses: list[str] | EvaluationError
+    guesses: list[str]
 
 
 class OverSeer(str, Enum):
@@ -95,7 +91,6 @@ class OverSeer(str, Enum):
 class GuessOrder(Enum):
     BEFORE = auto()
     AFTER = auto()
-    UNKNOWN = auto()
 
 
 class OverSight(BaseModel):
@@ -104,20 +99,17 @@ class OverSight(BaseModel):
     valid_targets: list[str]
     expected_score: int
     ground_truth_score: int
-    ground_truth_guesses: list[str] | EvaluationError
+    ground_truth_guesses: list[str]
     comparisons_performed: int
     deciding_critique: Critique | None = None
 
     def compare_word_pair(self, first: str, second: str) -> GuessOrder:
         self.comparisons_performed += 1
-        if isinstance(self.ground_truth_guesses, EvaluationError):
-            return GuessOrder.UNKNOWN
-        if first not in self.ground_truth_guesses:
-            if second not in self.ground_truth_guesses:
-                return GuessOrder.UNKNOWN
-            return GuessOrder.AFTER
-        if second not in self.ground_truth_guesses:
-            return GuessOrder.BEFORE
+        if (
+            first not in self.ground_truth_guesses
+            or second not in self.ground_truth_guesses
+        ):
+            raise ValueError("Word not in ground truth guesses")
         first_index = self.ground_truth_guesses.index(first)
         second_index = self.ground_truth_guesses.index(second)
         return GuessOrder.BEFORE if first_index < second_index else GuessOrder.AFTER
@@ -125,6 +117,9 @@ class OverSight(BaseModel):
     def disprove(self, deciding_critique: Critique) -> None:
         self.deciding_critique = deciding_critique
         self.expected_score = 0
+
+    def reward(self, adversarial_alpha: float) -> float:
+        return self.expected_score - adversarial_alpha * self.ground_truth_score
 
     @staticmethod
     def new(
@@ -140,12 +135,8 @@ class OverSight(BaseModel):
             overseer=overseer,
             clue_critiques=evaluation.clue_critiques,
             valid_targets=valid_targets,
-            expected_score=0
-            if isinstance(evaluation.guesses, EvaluationError)
-            else len(valid_targets),
-            ground_truth_score=0
-            if isinstance(evaluation.guesses, EvaluationError)
-            else evaluation.score,
+            expected_score=len(valid_targets),
+            ground_truth_score=evaluation.score,
             ground_truth_guesses=evaluation.guesses,
             comparisons_performed=0,
         )
@@ -156,24 +147,30 @@ class PreferenceSet(BaseModel):
     oversights: list[OverSight]
 
     def dpo_row(self, adversarial_alpha: float) -> dict | None:
-        def reward(o: OverSight) -> float:
-            return o.expected_score - adversarial_alpha * o.ground_truth_score
+        oversights = sorted(
+            self.oversights, key=lambda oversight: oversight.reward(adversarial_alpha)
+        )
+        reward_range = abs(
+            oversights[0].reward(adversarial_alpha)
+            - oversights[-1].reward(adversarial_alpha)
+        )
 
-        oversights = sorted(self.oversights, key=reward)
-        if abs(reward(oversights[0]) - reward(oversights[-1])) < 1e-6:
+        if reward_range < 1e-6:
             return None
 
         prompt = f"{self.game}\n\n"
         return {
             "prompt": prompt,
-            "rejected": str(oversights[0].clue_critiques.clue),
-            "chosen": str(oversights[-1].clue_critiques.clue),
+            "rejected": f"{oversights[0].clue_critiques.clue}\n\n",
+            "chosen": f"{oversights[-1].clue_critiques.clue}\n\n",
         }
 
 
 def generate_game(num_words: int = 20) -> Game:
     words = random.sample(GAME_WORDS, num_words)
-    good_words, bad_words = (words[: num_words // 2], words[num_words // 2 :])
+    good_words, bad_words = random.sample(
+        [words[: num_words // 2], words[num_words // 2 :]], 2
+    )
     return Game(
         good_words=good_words,
         bad_words=bad_words,

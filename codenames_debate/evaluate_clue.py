@@ -1,11 +1,12 @@
 import logging
+from functools import cache
 
 import backoff
 import numpy as np
 from openai import OpenAI, RateLimitError
 
 from .embedding_cache import EmbeddingCache
-from .models import Clue, ClueCritiques, Evaluation, EvaluationError, Game
+from .models import Clue, ClueCritiques, Evaluation, Game
 
 openai_client = OpenAI()
 embedding_cache = EmbeddingCache()
@@ -27,14 +28,9 @@ def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
             score=score,
             guesses=guesses,
         )
-    except Exception as err:
-        logging.warning(f"Failed to evaluate clue {err=}")
-        return Evaluation(
-            game=game,
-            clue_critiques=clue_critiques,
-            score=0,
-            guesses=EvaluationError(reason=repr(err)),
-        )
+    except Exception:
+        logging.exception("Failed to evaluate clue")
+        raise
 
 
 def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
@@ -42,13 +38,9 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
     if clue.clue.upper() in all_words:
         raise ValueError(f"Clue word is in the game: {clue.clue=}")
 
-    clue_embedding = (
-        get_embedding(f"Q: {clue.clue}") - get_embedding("Q: ") + get_embedding("A: ")
-    )
-
     guesses = sorted(
         all_words,
-        key=lambda word: cosine_similarity(get_embedding(word.title()), clue_embedding),
+        key=lambda word: clue_word_similarity(clue.clue, word),
         reverse=True,
     )
     score = 0
@@ -58,6 +50,21 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
         score += 1
 
     return score, guesses
+
+
+@cache
+def clue_word_similarity(clue: str, word: str) -> float:
+    return cosine_similarity(get_clue_embedding(clue), get_game_word_embedding(word))
+
+
+@cache
+def get_game_word_embedding(word: str) -> np.ndarray:
+    return get_embedding(word.title())
+
+
+@cache
+def get_clue_embedding(clue: str) -> np.ndarray:
+    return get_embedding(f"Q: {clue}") - get_embedding("Q: ") + get_embedding("A: ")
 
 
 def get_embedding(word: str) -> np.ndarray:
