@@ -35,17 +35,27 @@ def main(
     """Generate optimal clues for a dataset of games, and provide the final PreferenceSets."""
     games = [Game.model_validate_json(line) for line in sys.stdin]
     for game in tqdm(games, desc="Generating optimal clues"):
-        clue_critiques = optimize(overseer, neglect_words, adversarial_alpha, game)
-        oversight = oversee(
-            overseer, evaluate_clue(game, clue_critiques), neglect_words
+        preference_set = gen_optimal_preference_set(
+            overseer, neglect_words, adversarial_alpha, game
         )
-        preference_set = PreferenceSet(game=game, oversights=[oversight])
         print(preference_set.model_dump_json())
+
+
+def gen_optimal_preference_set(
+    overseer: OverSeer,
+    neglect_words: Optional[int],
+    adversarial_alpha: float,
+    game: Game,
+) -> PreferenceSet:
+    clue_critiques = optimize(overseer, neglect_words, adversarial_alpha, game)
+    oversight = oversee(overseer, evaluate_clue(game, clue_critiques), neglect_words)
+    preference_set = PreferenceSet(game=game, oversights=[oversight])
+    return preference_set
 
 
 def optimize(
     overseer: OverSeer,
-    neglected_words: Optional[int],
+    neglect_words: Optional[int],
     adversarial_alpha: float,
     game: Game,
 ) -> ClueCritiques:
@@ -54,24 +64,24 @@ def optimize(
         case OverSeer.ROBUST:
             return optimize_robust(game)
         case OverSeer.NEGLECT_LAST_N:
-            if neglected_words is None:
+            if neglect_words is None:
                 raise ValueError("Must specify number of words to neglect")
-            return optimize_neglect_last_n(game, neglected_words, adversarial_alpha)
+            return optimize_neglect_last_n(game, neglect_words, adversarial_alpha)
         case _:
             raise NotImplementedError(f"Unknown overseer: {overseer}")
 
 
 def optimize_neglect_last_n(
-    game: Game, neglected_words: int, adversarial_alpha: float
+    game: Game, neglect_words: int, adversarial_alpha: float
 ) -> ClueCritiques:
     """Optimize the neglect last n overseer."""
-    if neglected_words == 0:
+    if neglect_words == 0:
         return optimize_robust(game)
     evals = get_all_evals(game)
     for eval in evals:
         optimal_targets = []
         for word in eval.guesses:
-            if word in game.bad_words[:-neglected_words]:
+            if word in game.bad_words[:-neglect_words]:
                 break
             if word in game.good_words:
                 optimal_targets.append(word)
