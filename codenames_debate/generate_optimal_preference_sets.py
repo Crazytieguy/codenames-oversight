@@ -1,9 +1,10 @@
 import random
 import sys
 from collections.abc import Callable
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
+from pydantic import Field
 from toolz import groupby
 from tqdm import tqdm
 
@@ -16,15 +17,16 @@ from .models import (
     ClueCritiques,
     Evaluation,
     Game,
-    OverSeer,
-    PreferenceSet,
 )
-from .oversight import oversee
+from .oversight import OverSeer, OverSeerName, PreferenceSet
 
 
 def main(
-    overseer: OverSeer = OverSeer.ROBUST,
-    neglect_words: Optional[int] = None,
+    overseer_name: OverSeerName = OverSeerName.ROBUST,
+    neglect_words: int = 0,
+    neglect_last: Annotated[float, Field(ge=0, le=1)] = 0.0,
+    misweigh_last: Annotated[float, Field(ge=0, le=1)] = 0.0,
+    misweigh_first: Annotated[float, Field(ge=0, le=1)] = 0.0,
     adversarial_alpha: Annotated[
         float,
         typer.Argument(
@@ -34,39 +36,44 @@ def main(
 ):
     """Generate optimal clues for a dataset of games, and provide the final PreferenceSets."""
     games = [Game.model_validate_json(line) for line in sys.stdin]
-    for game in tqdm(games, desc="Generating optimal clues"):
-        preference_set = gen_optimal_preference_set(
-            overseer, neglect_words, adversarial_alpha, game
+    overseer = OverSeer.model_validate(
+        dict(
+            name=overseer_name,
+            neglect_words=neglect_words,
+            neglect_last=neglect_last,
+            misweigh_last=misweigh_last,
+            misweigh_first=misweigh_first,
         )
+    )
+    for game in tqdm(games, desc="Generating optimal clues"):
+        preference_set = gen_optimal_preference_set(overseer, adversarial_alpha, game)
         print(preference_set.model_dump_json())
 
 
 def gen_optimal_preference_set(
     overseer: OverSeer,
-    neglect_words: Optional[int],
     adversarial_alpha: float,
     game: Game,
 ) -> PreferenceSet:
-    clue_critiques = optimize(overseer, neglect_words, adversarial_alpha, game)
-    oversight = oversee(overseer, evaluate_clue(game, clue_critiques), neglect_words)
-    preference_set = PreferenceSet(game=game, oversights=[oversight])
+    clue_critiques = optimize(overseer, adversarial_alpha, game)
+    oversight = overseer.oversee(evaluate_clue(game, clue_critiques))
+    preference_set = PreferenceSet(game=game, overseer=overseer, oversights=[oversight])
     return preference_set
 
 
 def optimize(
     overseer: OverSeer,
-    neglect_words: Optional[int],
     adversarial_alpha: float,
     game: Game,
 ) -> ClueCritiques:
     """Optimize the given overseer + adversarial alpha."""
-    match overseer:
-        case OverSeer.ROBUST:
+    match overseer.root.name:
+        case OverSeerName.ROBUST:
             return optimize_robust(game)
-        case OverSeer.NEGLECT_LAST_N:
-            if neglect_words is None:
-                raise ValueError("Must specify number of words to neglect")
-            return optimize_neglect_last_n(game, neglect_words, adversarial_alpha)
+        case OverSeerName.NEGLECT_LAST_N:
+            return optimize_neglect_last_n(
+                game, overseer.root.neglect_words, adversarial_alpha
+            )
         case _:
             raise NotImplementedError(f"Unknown overseer: {overseer}")
 

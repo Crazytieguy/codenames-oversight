@@ -16,6 +16,7 @@ For more detail, see [the project doc](https://docs.google.com/document/d/1t9sBD
 * Redwood Research's post on [meta-level adversarial evaluations](https://www.alignmentforum.org/posts/MbWWKbyD5gLhJgfwn/meta-level-adversarial-evaluation-of-oversight-techniques-1)
 
 ## Rough Roadmap
+(Not really kept up to date, for full details check out the project doc)
 
 - [x] Generate decent clues with GPT-4
 - [x] Fine tune an open source LLM on the GPT-4 clues

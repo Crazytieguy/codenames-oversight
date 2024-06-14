@@ -2,7 +2,8 @@ from pathlib import Path
 
 import typer
 
-from .models import Clue, PreferenceSet, SFTSample
+from .models import Clue, SFTSample
+from .oversight import PreferenceSet
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

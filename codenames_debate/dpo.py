@@ -8,7 +8,7 @@ from peft import AutoPeftModelForCausalLM  # type: ignore
 from transformers import AutoTokenizer, BitsAndBytesConfig, TrainingArguments
 from trl import DPOTrainer
 
-from .models import PreferenceSet
+from .oversight import PreferenceSet
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
