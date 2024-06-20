@@ -17,6 +17,14 @@ class Game(BaseModel):
 Good words: {', '.join(self.good_words)}
 Bad words: {', '.join(self.bad_words)}"""
 
+    @staticmethod
+    def parse(repr: str) -> "Game":
+        good_words, bad_words = repr.strip().splitlines()
+        return Game(
+            good_words=good_words.removeprefix("Good words: ").split(", "),
+            bad_words=bad_words.removeprefix("Bad words: ").split(", "),
+        )
+
 
 class Clue(BaseModel):
     clue: str
