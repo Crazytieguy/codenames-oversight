@@ -21,35 +21,30 @@ def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
     """
     clue = clue_critiques.clue
     try:
-        score, guesses = evaluate_clue_inner(game, clue)
+        score, similarities = evaluate_clue_inner(game, clue)
         return Evaluation(
             game=game,
             clue_critiques=clue_critiques,
             score=score,
-            guesses=guesses,
+            similarities=similarities,
         )
     except Exception:
         logging.exception("Failed to evaluate clue")
         raise
 
 
-def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, list[str]]:
+def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, dict[str, float]]:
     all_words = game.good_words + game.bad_words
     if clue.clue.upper() in all_words:
         raise ValueError(f"Clue word is in the game: {clue.clue=}")
 
-    guesses = sorted(
-        all_words,
-        key=lambda word: clue_word_similarity(clue.clue, word),
-        reverse=True,
+    similarities = {word: clue_word_similarity(clue.clue, word) for word in all_words}
+    best_bad_word_similarity = max(similarities[word] for word in game.bad_words)
+    score = sum(
+        similarities[word] > best_bad_word_similarity for word in game.good_words
     )
-    score = 0
-    for word in guesses:
-        if word in game.bad_words:
-            break
-        score += 1
 
-    return score, guesses
+    return score, similarities
 
 
 @cache

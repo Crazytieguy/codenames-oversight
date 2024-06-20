@@ -3,7 +3,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-
 CLUE_WORDS = Path("clue-words.txt").read_text().splitlines()
 GAME_WORDS = Path("game-words.txt").read_text().splitlines()
 
@@ -79,7 +78,7 @@ class Evaluation(BaseModel):
     game: Game
     clue_critiques: ClueCritiques
     score: int
-    guesses: list[str]
+    similarities: dict[str, float]
 
 
 def generate_game(num_words: int = 20) -> Game:

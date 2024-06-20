@@ -6,14 +6,15 @@ import typer
 from tqdm import tqdm
 
 from codenames_debate.generate_optimal_preference_sets import gen_optimal_preference_set
-from codenames_debate.models import Game, OverSeer, PreferenceSet
+from codenames_debate.models import Game
+from codenames_debate.oversight import NeglectLastNOverSeer, PreferenceSet
 
 
 def main():
     """"""
     games = [Game.model_validate_json(line) for line in sys.stdin]
     all_optimizations = [
-        (OverSeer.NEGLECT_LAST_N, neglect_words, adversarial_alpha, game)
+        (NeglectLastNOverSeer(neglect_words=neglect_words), game, adversarial_alpha)
         for neglect_words in range(0, 8)
         for adversarial_alpha in (i * 0.1 for i in range(0, 6))
         for game in games
@@ -28,22 +29,18 @@ def main():
             total=len(futures),
             desc="Running neglect last n experiment",
         ):
-            overseer, neglect_words, adversarial_alpha, _ = futures[future]
+            overseer, _, adversarial_alpha = futures[future]
             preference_set = future.result()
-            dump_line(overseer, neglect_words, adversarial_alpha, preference_set)
+            dump_line(preference_set, adversarial_alpha)
 
 
 def dump_line(
-    overseer: OverSeer,
-    neglect_words: int,
-    adversarial_alpha: float,
     preference_set: PreferenceSet,
+    adversarial_alpha: float,
 ):
     print(
         json.dumps(
             {
-                "overseer": overseer,
-                "neglect_words": neglect_words,
                 "adversarial_alpha": adversarial_alpha,
                 **preference_set.model_dump(),
             }
