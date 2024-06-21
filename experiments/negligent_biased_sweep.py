@@ -24,15 +24,15 @@ def main():
             ),
             adversarial_alpha,
         )
-        for neglect_words in [0, 1, 4]
+        for neglect_words in [0, 1]
         for bias_neglected_words in {0, neglect_words}
-        for bias_non_neglected_words in [0, 1, 4]
-        for bias_factor in [0.5, 1.0, 1.5]
-        for adversarial_alpha in [0.0, 0.2, 0.4]
-        if not (
-            (bias_non_neglected_words == 0 and bias_factor != 1.0)
-            or (bias_non_neglected_words != 0 and bias_factor == 1.0)
+        for bias_non_neglected_words in [0, 1]
+        for bias_factor in (
+            [1.0]
+            if (bias_neglected_words + bias_non_neglected_words == 0)
+            else [0.7, 1.5]
         )
+        for adversarial_alpha in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
     ]
     with ProcessPoolExecutor(max_workers=4) as executor:
         futures = [
