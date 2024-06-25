@@ -1,5 +1,6 @@
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Annotated
 
 import typer
 from tqdm import tqdm
@@ -7,16 +8,18 @@ from tqdm import tqdm
 from codenames_debate.generate_optimal_preference_sets import gen_optimal_preference_set
 from codenames_debate.models import Game
 from codenames_debate.oversight import (
+    NegligentBiasedJudgeOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,
 )
 
 
-def main():
+def main(debate: Annotated[bool, typer.Option()]):
     games = [Game.model_validate_json(line) for line in sys.stdin]
+    overseer_class = NegligentBiasedJudgeOverSeer if debate else NegligentBiasedOverSeer
     all_optimization_params = [
         (
-            NegligentBiasedOverSeer(
+            overseer_class(
                 neglect_words=neglect_words,
                 bias_neglected_words=bias_neglected_words,
                 bias_non_neglected_words=bias_non_neglected_words,
