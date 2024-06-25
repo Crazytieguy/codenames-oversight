@@ -1,17 +1,20 @@
 import random
-from itertools import cycle
 
 import typer
-from toolz.itertoolz import take
 
 from .models import CLUE_WORDS, Clue, Critique, Game, SFTSample, generate_game
 
+CLUE_WORDS_INDEXABLE = list(CLUE_WORDS)
+
 
 def main(dataset_size: int = 2048, min_game_size: int = 4, max_game_size: int = 20):
-    random.shuffle(CLUE_WORDS)
-    for clue in take(dataset_size, cycle(CLUE_WORDS)):
+    random.shuffle(CLUE_WORDS_INDEXABLE)
+    for _ in range(dataset_size):
         game = generate_game(random.randint(min_game_size, max_game_size))
-        clue = Clue(clue=random.choice(CLUE_WORDS), targets=random_targets(game))
+        current_game_words = game.good_words + game.bad_words
+        while (clue_word := random.choice(CLUE_WORDS_INDEXABLE)) in current_game_words:
+            pass
+        clue = Clue(clue=clue_word, targets=random_targets(game))
         critique = Critique(
             bad_word=random.choice(game.bad_words),
             target_good_word=random.choice(clue.targets),
@@ -21,7 +24,7 @@ def main(dataset_size: int = 2048, min_game_size: int = 4, max_game_size: int = 
 
 
 def random_targets(game: Game) -> list[str]:
-    num_targets = random.binomialvariate(len(game.good_words) - 1, 0.1) + 1
+    num_targets = random.binomialvariate(len(game.good_words) - 1, 0.07) + 1
     return random.sample(game.good_words, k=num_targets)
 
 

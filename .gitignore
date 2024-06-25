@@ -7,3 +7,4 @@ huggingface-token.txt
 .python-version
 .env
 embedding_cache.sqlite
+nwl2023.txt

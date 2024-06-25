@@ -3,8 +3,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-CLUE_WORDS = Path("clue-words.txt").read_text().splitlines()
 GAME_WORDS = Path("game-words.txt").read_text().splitlines()
+CLUE_WORDS = {word.title() for word in Path("nwl2023.txt").read_text().splitlines()}
 
 
 class Game(BaseModel):

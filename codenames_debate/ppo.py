@@ -3,14 +3,19 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
 
 import torch
 import typer
 from datasets import Dataset
+from peft import LoraConfig, get_peft_model  # type: ignore
 from tqdm import tqdm
-from transformers import AutoTokenizer, BitsAndBytesConfig
-from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, set_seed
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from trl import (
+    AutoModelForCausalLMWithValueHead,
+    PPOConfig,
+    PPOTrainer,
+    set_seed,
+)
 
 from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Game
@@ -24,45 +29,56 @@ def main(
     dataset_file: str,
     model_dir: str,
     output_dir: str,
-    reference_model: Optional[str] = None,
-    learning_rate: float = 5e-6,
+    base_model: str = "meta-llama/Llama-2-7b-hf",
+    learning_rate: float = 1e-4,
     batch_size: int = 64,
 ):
     set_seed(0)
     dataset = load_game_dataset(dataset_file)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
-    model = AutoModelForCausalLMWithValueHead.from_pretrained(
+    ref_model = AutoModelForCausalLM.from_pretrained(
         model_dir,
+        quantization_config=quantization_config,
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+    )
+
+    peft_config = LoraConfig(
+        r=64,
+        lora_alpha=32,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+
+    peft_model = get_peft_model(ref_model, peft_config)
+
+    model = AutoModelForCausalLMWithValueHead.from_pretrained(
+        peft_model,
         quantization_config=quantization_config,
         device_map="auto",
         torch_dtype=torch.bfloat16,
         is_trainable=True,
     )
-    if reference_model is None:
-        reference_model = model_dir
-    ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(
-        reference_model,
-        quantization_config=quantization_config,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        is_trainable=False,
-    )
+
     mini_batch_size = 8  # important for memory usage
+
     ppo_config = PPOConfig(
         learning_rate=learning_rate,
         ppo_epochs=1,
         batch_size=batch_size,
         mini_batch_size=mini_batch_size,
         gradient_accumulation_steps=batch_size // mini_batch_size,
-        init_kl_coef=0.05,
+        init_kl_coef=0.03,
         log_with="tensorboard",
         project_kwargs={"logging_dir": f"{output_dir}/logs"},
     )
+
     tokenizer = AutoTokenizer.from_pretrained(
-        model_dir, add_eos_token=False, padding_side="left"
+        base_model, add_eos_token=False, padding_side="left"
     )
     tokenizer.pad_token = tokenizer.eos_token
+
     ppo_trainer: PPOTrainer = PPOTrainer(
         ppo_config,
         model=model,
@@ -71,6 +87,7 @@ def main(
         tokenizer=tokenizer,
         data_collator=collator,
     )  # type: ignore
+
     for batch in tqdm(
         ppo_trainer.dataloader,
         total=len(dataset) / ppo_config.batch_size,
@@ -88,7 +105,7 @@ def main(
                 top_p=1.0,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,
-                max_new_tokens=128,
+                max_new_tokens=64,
             )
             output_texts = [tokenizer.decode(o.squeeze()) for o in outputs]  # type: ignore
 
