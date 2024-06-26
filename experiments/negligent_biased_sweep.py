@@ -1,31 +1,31 @@
+import logging
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Annotated
 
 import typer
 from tqdm import tqdm
 
-from codenames_debate.generate_optimal_preference_sets import gen_optimal_preference_set
+from codenames_debate.evaluate_clue import evaluate_clue
 from codenames_debate.models import Game
 from codenames_debate.oversight import (
     NegligentBiasedJudgeOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,
+    PreferenceSet,
 )
 
+logging.basicConfig(level=logging.INFO)
 
-def main(debate: Annotated[bool, typer.Option()]):
+
+def main(debate: Annotated[bool, typer.Option()], clue_words: int = 1024):
     games = [Game.model_validate_json(line) for line in sys.stdin]
     overseer_class = NegligentBiasedJudgeOverSeer if debate else NegligentBiasedOverSeer
     all_optimization_params = [
-        (
-            overseer_class(
-                neglect_words=neglect_words,
-                bias_neglected_words=bias_neglected_words,
-                bias_non_neglected_words=bias_non_neglected_words,
-                bias_factor=bias_factor,
-            ),
-            adversarial_alpha,
+        overseer_class(
+            neglect_words=neglect_words,
+            bias_neglected_words=bias_neglected_words,
+            bias_non_neglected_words=bias_non_neglected_words,
+            bias_factor=bias_factor,
         )
         for neglect_words in [0, 1]
         for bias_neglected_words in {0, neglect_words}
@@ -35,25 +35,42 @@ def main(debate: Annotated[bool, typer.Option()]):
             if (bias_neglected_words + bias_non_neglected_words == 0)
             else [0.7, 1.5]
         )
-        for adversarial_alpha in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
     ]
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        futures = [
-            executor.submit(run_params, games, overseer, adversarial_alpha)
-            for overseer, adversarial_alpha in all_optimization_params
-        ]
-        for future in tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc="Running negligent biased sweep",
-        ):
-            for p_set in future.result():
-                print(p_set.model_dump_json())
+    for overseer in tqdm(
+        all_optimization_params, desc="Running negligent biased sweep"
+    ):
+        for p_set in run_params(games, overseer, clue_words):
+            print(p_set.model_dump_json())
 
 
-def run_params(games: list[Game], overseer: OverSeer, adversarial_alpha: float):
+def gen_optimal_preference_sets(
+    overseer: OverSeer,
+    game: Game,
+    clue_words: int,
+) -> list[PreferenceSet]:
+    clue_critiques_by_alpha = overseer.optimal(
+        game, clue_words, [i * 0.05 for i in range(10)]
+    )
+    oversights = {
+        adversarial_alpha: overseer.oversee(evaluate_clue(game, clue_critiques))
+        for adversarial_alpha, clue_critiques in clue_critiques_by_alpha.items()
+    }
     return [
-        gen_optimal_preference_set(overseer, game, adversarial_alpha) for game in games
+        PreferenceSet(
+            game=game,
+            overseer=overseer,
+            oversights=[oversight],
+            adversarial_alpha=adversarial_alpha,
+        )
+        for adversarial_alpha, oversight in oversights.items()
+    ]
+
+
+def run_params(games: list[Game], overseer: OverSeer, clue_words: int):
+    return [
+        p_set
+        for game in tqdm(games)
+        for p_set in gen_optimal_preference_sets(overseer, game, clue_words)
     ]
 
 

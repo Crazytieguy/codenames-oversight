@@ -1,16 +1,14 @@
 import abc
 import logging
 import random
-from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum, auto
+from functools import partial
 from typing import Annotated, Literal, Optional, Self, Union
 
 from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt, model_validator
-from toolz import groupby
 
-from .evaluate_clue import (
-    evaluate_clue,
-)
+from .evaluate_clue import evaluate_clue, get_clue_embedding
 from .models import (
     CLUE_WORDS,
     Clue,
@@ -21,6 +19,7 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+CLUE_WORDS_INDEXABLE = list(CLUE_WORDS)
 
 
 class GuessOrder(Enum):
@@ -91,7 +90,9 @@ class OverSeerBase(BaseModel, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def optimal(self, game: Game, adversarial_alpha: float) -> ClueCritiques:
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
         pass
 
 
@@ -141,8 +142,10 @@ class RobustOverSeer(OverSeerBase):
     def oversee(self, evaluation: Evaluation) -> OverSight:
         return NeglectLastNOverSeer(neglect_words=0).oversee(evaluation)
 
-    def optimal(self, game: Game, adversarial_alpha: float) -> ClueCritiques:
-        evals = get_all_evals(game)
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
+        evals = get_all_evals(game, clue_words)
         for eval in evals:
             best_bad_word_similarity = max(
                 eval.similarities[word] for word in game.bad_words
@@ -154,10 +157,7 @@ class RobustOverSeer(OverSeerBase):
             ]
             eval.clue_critiques.clue.targets = optimal_targets
 
-        def reward(eval: Evaluation) -> int:
-            return len(eval.clue_critiques.clue.targets)
-
-        return choose_best_clue_critique(evals, reward)
+        return choose_best_clue_critique(evals, adversarial_alphas)
 
 
 class RobustJudgeOverSeer(OverSeerBase):
@@ -187,7 +187,9 @@ class RobustJudgeOverSeer(OverSeerBase):
                 return oversight
         return oversight
 
-    def optimal(self, game: Game, adversarial_alpha: float) -> ClueCritiques:
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
         raise NotImplementedError(
             "RobustJudgeOverSeer does not have an optimal policy yet"
         )
@@ -223,10 +225,12 @@ class NeglectLastNOverSeer(OverSeerBase):
                 return oversight
         return oversight
 
-    def optimal(self, game: Game, adversarial_alpha: float) -> ClueCritiques:
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
         if self.neglect_words == 0:
-            return RobustOverSeer().optimal(game, adversarial_alpha)
-        evals = get_all_evals(game)
+            return RobustOverSeer().optimal(game, clue_words, adversarial_alphas)
+        evals = get_all_evals(game, clue_words)
         for eval in evals:
             best_bad_word_similarity = max(
                 eval.similarities[word]
@@ -239,12 +243,7 @@ class NeglectLastNOverSeer(OverSeerBase):
             ]
             eval.clue_critiques.clue.targets = optimal_targets
 
-        def reward(eval: Evaluation) -> float:
-            return (
-                len(eval.clue_critiques.clue.targets) - adversarial_alpha * eval.score
-            )
-
-        return choose_best_clue_critique(evals, reward)
+        return choose_best_clue_critique(evals, adversarial_alphas)
 
 
 class NegligentBiasedOverSeer(OverSeerBase):
@@ -313,13 +312,15 @@ class NegligentBiasedOverSeer(OverSeerBase):
                 return oversight
         return oversight
 
-    def optimal(self, game: Game, adversarial_alpha: float) -> ClueCritiques:
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
         if len(game.bad_words) < self.neglect_words + self.bias_non_neglected_words:
             raise ValueError(
                 "Too many words to neglect and bias"
                 f"got {len(game.bad_words)=}, {self.neglect_words=}, {self.bias_non_neglected_words=}"
             )
-        evals = get_all_evals(game)
+        evals = get_all_evals(game, clue_words)
         for eval in evals:
             adjusted_similarities = eval.similarities.copy()
             for word in game.bad_words[: self.bias_neglected_words]:
@@ -338,12 +339,7 @@ class NegligentBiasedOverSeer(OverSeerBase):
             ]
             eval.clue_critiques.clue.targets = optimal_targets
 
-        def reward(eval: Evaluation) -> float:
-            return (
-                len(eval.clue_critiques.clue.targets) - adversarial_alpha * eval.score
-            )
-
-        return choose_best_clue_critique(evals, reward)
+        return choose_best_clue_critique(evals, adversarial_alphas)
 
 
 class NegligentBiasedJudgeOverSeer(OverSeerBase):
@@ -410,13 +406,15 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
                 return oversight
         return oversight
 
-    def optimal(self, game: Game, adversarial_alpha: float) -> ClueCritiques:
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
         if len(game.bad_words) < self.neglect_words + self.bias_non_neglected_words:
             raise ValueError(
                 "Too many words to neglect and bias"
                 f"got {len(game.bad_words)=}, {self.neglect_words=}, {self.bias_non_neglected_words=}"
             )
-        evals = get_all_evals(game)
+        evals = get_all_evals(game, clue_words)
         for eval in evals:
             adjusted_similarities = eval.similarities.copy()
             for word in game.bad_words[: self.bias_neglected_words]:
@@ -437,33 +435,35 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
                 Critique(bad_word=best_bad_word, target_good_word=worst_target)
             ]
 
-        def reward(eval: Evaluation) -> float:
-            return (
-                len(eval.clue_critiques.clue.targets) - adversarial_alpha * eval.score
-            )
-
-        return choose_best_clue_critique(evals, reward)
+        return choose_best_clue_critique(evals, adversarial_alphas)
 
 
 def choose_best_clue_critique(
-    evals: list[Evaluation], reward: Callable[[Evaluation], float | int]
-):
-    grouped: dict[int, list[Evaluation]] = groupby(
-        lambda eval: float_bucket(reward(eval)), evals
-    )
-    best_score = max(grouped)
-    best_evals = grouped[best_score]
-    chosen_eval = random.choice(best_evals)
-    return chosen_eval.clue_critiques
+    evals: list[Evaluation], adversarial_alphas: list[float]
+) -> dict[float, ClueCritiques]:
+    def reward(adversarial_alpha: float, eval: Evaluation) -> float:
+        return float_bucket(
+            len(eval.clue_critiques.clue.targets) - adversarial_alpha * eval.score
+        )
+
+    return {
+        adversarial_alpha: max(
+            evals, key=partial(reward, adversarial_alpha)
+        ).clue_critiques
+        for adversarial_alpha in adversarial_alphas
+    }
 
 
-def get_all_evals(game: Game) -> list[Evaluation]:
-    raise NotImplementedError(
-        "The clue dictionary is super big now, so it's best to find a different way to do this"
-    )
+def get_all_evals(game: Game, clue_words: list[str] | int) -> list[Evaluation]:
+    if isinstance(clue_words, int):
+        clue_words = random.sample(CLUE_WORDS_INDEXABLE, clue_words)
+    # Ensure the clue embeddings are cached
+    with ThreadPoolExecutor() as executor:
+        executor.map(get_clue_embedding, clue_words)
     return [
         evaluate_clue(game, ClueCritiques(clue=Clue(clue=word, targets=[])))
-        for word in CLUE_WORDS
+        for word in clue_words
+        if word.upper() not in game.good_words + game.bad_words
     ]
 
 
