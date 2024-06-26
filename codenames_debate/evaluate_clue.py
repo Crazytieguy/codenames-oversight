@@ -6,7 +6,7 @@ import numpy as np
 from openai import OpenAI, RateLimitError
 
 from .embedding_cache import EmbeddingCache
-from .models import Clue, ClueCritiques, Evaluation, Game
+from .models import CLUE_WORDS, Clue, ClueCritiques, Evaluation, Game
 
 openai_client = OpenAI()
 embedding_cache = EmbeddingCache()
@@ -37,6 +37,8 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, dict[str, float]]:
     all_words = game.good_words + game.bad_words
     if clue.clue.upper() in all_words:
         raise ValueError(f"Clue word is in the game: {clue.clue=}")
+    if clue.clue not in CLUE_WORDS:
+        raise ValueError(f"Clue word not allowed: {clue.clue=}")
 
     similarities = {word: clue_word_similarity(clue.clue, word) for word in all_words}
     best_bad_word_similarity = max(similarities[word] for word in game.bad_words)

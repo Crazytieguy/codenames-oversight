@@ -458,6 +458,9 @@ def choose_best_clue_critique(
 
 
 def get_all_evals(game: Game) -> list[Evaluation]:
+    raise NotImplementedError(
+        "The clue dictionary is super big now, so it's best to find a different way to do this"
+    )
     return [
         evaluate_clue(game, ClueCritiques(clue=Clue(clue=word, targets=[])))
         for word in CLUE_WORDS
