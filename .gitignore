@@ -7,3 +7,4 @@ huggingface-token.txt
 .python-version
 .env
 embedding_cache.sqlite
+.DS_Store
