@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=codenames_debate_ppo_small
 #SBATCH --open-mode=append
-#SBATCH --output=job_outputs/%x_%j.out
-#SBATCH --error=job_outputs/%x_%j.err
+#SBATCH --output=job_outputs/%x/%A_%a.out
+#SBATCH --error=job_outputs/%x/%A_%a.err
 #SBATCH --export=ALL
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:rtx8000:1

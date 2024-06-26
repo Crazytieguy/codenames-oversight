@@ -8,6 +8,7 @@ import torch
 import typer
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model  # type: ignore
+from pydantic import NonNegativeFloat, NonNegativeInt
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import (
@@ -17,6 +18,14 @@ from trl import (
     set_seed,
 )
 
+from codenames_debate.oversight import (
+    NeglectLastNOverSeer,
+    NegligentBiasedOverSeer,
+    OverSeer,
+    RobustJudgeOverSeer,
+    RobustOverSeer,
+)
+
 from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Game
 
@@ -24,8 +33,16 @@ logging.basicConfig(level=logging.INFO)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-@app.command()
-def main(
+DATASET_FILE: str
+MODEL_DIR: str
+OUTPUT_DIR: str
+BASE_MODEL: str
+LEARNING_RATE: float
+BATCH_SIZE: int
+
+
+@app.callback()
+def set_params(
     dataset_file: str,
     model_dir: str,
     output_dir: str,
@@ -33,12 +50,27 @@ def main(
     learning_rate: float = 1e-4,
     batch_size: int = 64,
 ):
+    global DATASET_FILE
+    global MODEL_DIR
+    global OUTPUT_DIR
+    global BASE_MODEL
+    global LEARNING_RATE
+    global BATCH_SIZE
+    DATASET_FILE = dataset_file
+    MODEL_DIR = model_dir
+    OUTPUT_DIR = output_dir
+    BASE_MODEL = base_model
+    LEARNING_RATE = learning_rate
+    BATCH_SIZE = batch_size
+
+
+def main(overseer: OverSeer):
     set_seed(0)
-    dataset = load_game_dataset(dataset_file)
+    dataset = load_game_dataset(DATASET_FILE)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     ref_model = AutoModelForCausalLM.from_pretrained(
-        model_dir,
+        MODEL_DIR,
         quantization_config=quantization_config,
         device_map="auto",
         torch_dtype=torch.bfloat16,
@@ -64,18 +96,18 @@ def main(
     mini_batch_size = 8  # important for memory usage
 
     ppo_config = PPOConfig(
-        learning_rate=learning_rate,
+        learning_rate=LEARNING_RATE,
         ppo_epochs=1,
-        batch_size=batch_size,
+        batch_size=BATCH_SIZE,
         mini_batch_size=mini_batch_size,
-        gradient_accumulation_steps=batch_size // mini_batch_size,
-        init_kl_coef=0.03,
+        gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,
+        init_kl_coef=0.05,
         log_with="tensorboard",
-        project_kwargs={"logging_dir": f"{output_dir}/logs"},
+        project_kwargs={"logging_dir": f"{OUTPUT_DIR}/logs"},
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
-        base_model, add_eos_token=False, padding_side="left"
+        BASE_MODEL, add_eos_token=False, padding_side="left"
     )
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -124,9 +156,12 @@ def main(
                 else None
                 for game, clue in zip(games, clues)
             ]
+            oversights = [
+                overseer.oversee(e) if e is not None else None for e in evaluations
+            ]
             rewards = [
-                torch.tensor(float(e.score if e is not None else -10))
-                for e in evaluations
+                torch.tensor(float(o.expected_score if o is not None else -10))
+                for o in oversights
             ]
             for e in evaluations:
                 if e is not None:
@@ -136,7 +171,41 @@ def main(
             stats = ppo_trainer.step(inputs, outputs, rewards)  # type: ignore
             ppo_trainer.log_stats(stats, batch, rewards)  # type: ignore
 
-    ppo_trainer.save_pretrained(output_dir)
+    ppo_trainer.save_pretrained(OUTPUT_DIR)
+
+
+@app.command()
+def robust():
+    overseer = RobustOverSeer()
+    main(overseer)
+
+
+@app.command()
+def robust_judge():
+    overseer = RobustJudgeOverSeer()
+    main(overseer)
+
+
+@app.command()
+def neglect_last_n(neglect_words: NonNegativeInt):
+    overseer = NeglectLastNOverSeer(neglect_words=neglect_words)
+    main(overseer)
+
+
+@app.command()
+def negligent_biased(
+    neglect_words: NonNegativeInt,
+    bias_neglected_words: NonNegativeInt,
+    bias_non_neglected_words: NonNegativeInt,
+    bias_factor: NonNegativeFloat,
+):
+    overseer = NegligentBiasedOverSeer(
+        neglect_words=neglect_words,
+        bias_neglected_words=bias_neglected_words,
+        bias_non_neglected_words=bias_non_neglected_words,
+        bias_factor=bias_factor,
+    )
+    main(overseer)
 
 
 def safe[T](f: Callable[..., T], *args) -> T | None:
