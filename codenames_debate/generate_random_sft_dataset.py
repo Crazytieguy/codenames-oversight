@@ -7,7 +7,7 @@ from .models import CLUE_WORDS, Clue, Critique, Game, SFTSample, generate_game
 CLUE_WORDS_INDEXABLE = list(CLUE_WORDS)
 
 
-def main(dataset_size: int = 2048, min_game_size: int = 4, max_game_size: int = 20):
+def main(dataset_size: int = 8192, min_game_size: int = 4, max_game_size: int = 20):
     random.shuffle(CLUE_WORDS_INDEXABLE)
     for _ in range(dataset_size):
         game = generate_game(random.randint(min_game_size, max_game_size))
@@ -24,8 +24,10 @@ def main(dataset_size: int = 2048, min_game_size: int = 4, max_game_size: int = 
 
 
 def random_targets(game: Game) -> list[str]:
-    num_targets = random.binomialvariate(len(game.good_words) - 1, 0.07) + 1
-    return random.sample(game.good_words, k=num_targets)
+    p_pick = 1 / (len(game.bad_words) + 1)
+    targets = [word for word in game.good_words if random.random() < p_pick]
+    random.shuffle(targets)  # Not clear if this matters
+    return targets
 
 
 if __name__ == "__main__":

@@ -7,31 +7,34 @@ import matplotlib.pyplot as plt
 bad_words_in_game = 4  # As an example
 base_probability = lambda: 1 / (bad_words_in_game + 1)
 base_odds = lambda: base_probability() / (1 - base_probability())
-scale = 0.5
 beta = 1
-calibrated_probability = 0.5
+initial_reward_bad = -1.5
+calibrated_p = 0.5
 
 
 def log_odds(p: float) -> float:
     return math.log(p / (1 - p))
 
 
-def reward(n: int) -> float:
+def reward_bad(n: int) -> float:
+    return initial_reward_bad + (n - 1) * (
+        log_odds(calibrated_p) - log_odds(base_probability())
+    )
+
+
+def reward_good(n: int) -> float:
     if n == 0:
         return 0
     return (
-        reward(n - 1)
-        + beta
-        * (
-            scale * (1 - calibrated_probability)
-            + log_odds(calibrated_probability)
-            - log_odds(base_probability())
-        )
-    ) / calibrated_probability
+        reward_good(n - 1)
+        + log_odds(calibrated_p)
+        - log_odds(base_probability())
+        - (1 - calibrated_p) * reward_bad(n)
+    ) / calibrated_p
 
 
 def expected_reward(n: int, p: float) -> float:
-    return p * reward(n) - (1 - p) * scale * beta
+    return p * reward_good(n) + (1 - p) * reward_bad(n)
 
 
 def p_nth_target(n: int, p_accumulated: float, p_pick: float) -> float:
