@@ -1,5 +1,6 @@
 import logging
 import time
+from collections import Counter
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,14 +23,17 @@ from codenames_debate.oversight import (
     NeglectLastNOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,
+    PreferenceSet,
     RobustJudgeOverSeer,
     RobustOverSeer,
 )
 
 from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Game
+from .ppo_reward import reward_accept, reward_reject
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
@@ -39,6 +43,7 @@ OUTPUT_DIR: str
 BASE_MODEL: str
 LEARNING_RATE: float
 BATCH_SIZE: int
+KL_COEFF: float
 
 
 @app.callback()
@@ -48,7 +53,8 @@ def set_params(
     output_dir: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
     learning_rate: float = 1e-4,
-    batch_size: int = 64,
+    batch_size: int = 128,
+    kl_coeff: float = 0.2,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -56,12 +62,14 @@ def set_params(
     global BASE_MODEL
     global LEARNING_RATE
     global BATCH_SIZE
+    global KL_COEFF
     DATASET_FILE = dataset_file
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
     BASE_MODEL = base_model
     LEARNING_RATE = learning_rate
     BATCH_SIZE = batch_size
+    KL_COEFF = kl_coeff
 
 
 def main(overseer: OverSeer):
@@ -101,7 +109,8 @@ def main(overseer: OverSeer):
         batch_size=BATCH_SIZE,
         mini_batch_size=mini_batch_size,
         gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,
-        init_kl_coef=0.05,
+        init_kl_coef=KL_COEFF,
+        adap_kl_ctrl=False,  # reward function relies on fixed KL
         log_with="tensorboard",
         project_kwargs={"logging_dir": f"{OUTPUT_DIR}/logs"},
     )
@@ -160,12 +169,31 @@ def main(overseer: OverSeer):
                 overseer.oversee(e) if e is not None else None for e in evaluations
             ]
             rewards = [
-                torch.tensor(float(o.expected_score if o is not None else -10))
-                for o in oversights
+                torch.tensor(
+                    (
+                        reward_reject(
+                            bad_words_in_game=len(g.bad_words),
+                            n_targets=len(o.valid_targets),
+                            kl_coeff=KL_COEFF,
+                        )
+                        if o.deciding_critique is not None
+                        else reward_accept(
+                            bad_words_in_game=len(g.bad_words),
+                            n_targets=len(o.valid_targets),
+                            kl_coeff=KL_COEFF,
+                        )
+                    )
+                    if g is not None and o is not None
+                    else -10.0
+                )
+                for g, o in zip(games, oversights)
             ]
-            for e in evaluations:
-                if e is not None:
-                    print(e.model_dump_json())
+            reward_counts = Counter([r.item() for r in rewards])
+            logger.info(f"Reward counts: {dict(sorted(reward_counts.most_common()))}")
+            for g, o in zip(games, oversights):
+                if g is not None and o is not None:
+                    p_set = PreferenceSet(game=g, overseer=overseer, oversights=[o])
+                    print(p_set.model_dump_json())
 
         with timer("ppo step"):
             stats = ppo_trainer.step(inputs, outputs, rewards)  # type: ignore

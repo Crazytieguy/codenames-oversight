@@ -96,6 +96,7 @@ def main(
         train_dataset=dataset,  # type: ignore
         dataset_text_field="text",
         peft_config=peft_config,
+        max_seq_length=256,
     )
 
     trainer.train()  # type: ignore

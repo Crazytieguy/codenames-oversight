@@ -15,9 +15,13 @@ def main(dataset_size: int = 8192, min_game_size: int = 4, max_game_size: int = 
         while (clue_word := random.choice(CLUE_WORDS_INDEXABLE)) in current_game_words:
             pass
         clue = Clue(clue=clue_word, targets=random_targets(game))
-        critique = Critique(
-            bad_word=random.choice(game.bad_words),
-            target_good_word=random.choice(clue.targets),
+        critique = (
+            Critique(
+                bad_word=random.choice(game.bad_words),
+                target_good_word=random.choice(clue.targets),
+            )
+            if clue.targets
+            else None
         )
         sample = SFTSample(game=game, clue=clue, critique=critique)
         print(sample.model_dump_json())

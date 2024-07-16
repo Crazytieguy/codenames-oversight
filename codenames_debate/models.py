@@ -40,10 +40,10 @@ Targets: {', '.join(self.targets)}"""
         clue_line, targets_line = response.removesuffix("</s>").strip().split("\n")
         if not clue_line.startswith("Clue: "):
             raise ValueError(f"Expected 'Clue: ', got {clue_line}")
-        if not targets_line.startswith("Targets: "):
-            raise ValueError(f"Expected 'Targets: ', got {targets_line}")
+        if not targets_line.startswith("Targets:"):
+            raise ValueError(f"Expected 'Targets:', got {targets_line}")
         clue = clue_line[len("Clue: ") :]
-        targets = targets_line.removeprefix("Targets: ").split(", ")
+        targets = targets_line.removeprefix("Targets:").strip().split(", ")
         return Clue(clue=clue, targets=targets)
 
 
@@ -69,7 +69,7 @@ class Critique(BaseModel):
 class SFTSample(BaseModel):
     game: Game
     clue: Clue
-    critique: Critique
+    critique: Critique | None = None
 
 
 class ClueCritiques(BaseModel):

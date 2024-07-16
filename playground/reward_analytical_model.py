@@ -7,9 +7,18 @@ import matplotlib.pyplot as plt
 bad_words_in_game = 4  # As an example
 base_probability = lambda: 1 / (bad_words_in_game + 1)
 base_odds = lambda: base_probability() / (1 - base_probability())
-beta = 1
-initial_reward_bad = -1.5
+beta = 0.5
 calibrated_p = 0.5
+calibrated_p_2 = 0.1
+
+
+def initial_reward_bad() -> float:
+    return (beta / (1 - calibrated_p_2 / calibrated_p)) * (
+        log_odds(calibrated_p_2)
+        - log_odds(base_probability())
+        - (calibrated_p_2 / calibrated_p)
+        * (log_odds(calibrated_p) - log_odds(base_probability()))
+    )
 
 
 def log_odds(p: float) -> float:
@@ -17,7 +26,7 @@ def log_odds(p: float) -> float:
 
 
 def reward_bad(n: int) -> float:
-    return initial_reward_bad + (n - 1) * (
+    return initial_reward_bad() + (n - 1) * beta * (
         log_odds(calibrated_p) - log_odds(base_probability())
     )
 
@@ -27,8 +36,7 @@ def reward_good(n: int) -> float:
         return 0
     return (
         reward_good(n - 1)
-        + log_odds(calibrated_p)
-        - log_odds(base_probability())
+        + beta * (log_odds(calibrated_p) - log_odds(base_probability()))
         - (1 - calibrated_p) * reward_bad(n)
     ) / calibrated_p
 
