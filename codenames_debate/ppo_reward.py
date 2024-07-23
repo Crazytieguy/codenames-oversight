@@ -34,7 +34,7 @@ def reward_accept(
     calibrated_p_2: float = CALIBRATED_P_2_DEFAULT,
 ) -> float:
     if n_targets == 0:
-        return 0
+        return 0.0
     return (
         reward_accept(
             bad_words_in_game=bad_words_in_game,
