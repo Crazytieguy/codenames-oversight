@@ -1,14 +1,15 @@
 import abc
 import logging
 import random
-from concurrent.futures import ThreadPoolExecutor
+
+# from concurrent.futures import ThreadPoolExecutor
 from enum import Enum, auto
 from functools import partial
 from typing import Annotated, Literal, Optional, Self, Union
 
 from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt, model_validator
 
-from .evaluate_clue import evaluate_clue, get_clue_embedding
+from .evaluate_clue import evaluate_clue
 from .models import (
     CLUE_WORDS,
     Clue,
@@ -17,6 +18,7 @@ from .models import (
     Evaluation,
     Game,
 )
+from .ppo_reward import reward_accept, reward_reject
 
 logger = logging.getLogger(__name__)
 CLUE_WORDS_INDEXABLE = list(CLUE_WORDS)
@@ -62,8 +64,31 @@ class OverSight(BaseModel):
         self.deciding_critique = deciding_critique
         self.expected_score = 0
 
-    def reward(self, adversarial_alpha: float) -> float:
+    def simple_reward(self, adversarial_alpha: float) -> float:
         return self.expected_score - adversarial_alpha * self.ground_truth_score
+
+    def ppo_reward(
+        self, bad_words_in_game: int, kl_coeff: float, adversarial_alpha: float
+    ) -> float:
+        self_reward = (
+            reward_accept(
+                bad_words_in_game=bad_words_in_game,
+                kl_coeff=kl_coeff,
+                n_targets=len(self.valid_targets),
+            )
+            if self.deciding_critique is None
+            else reward_reject(
+                bad_words_in_game=bad_words_in_game,
+                kl_coeff=kl_coeff,
+                n_targets=len(self.valid_targets),
+            )
+        )
+        true_reward = reward_accept(
+            bad_words_in_game=bad_words_in_game,
+            kl_coeff=kl_coeff,
+            n_targets=self.ground_truth_score,
+        )
+        return self_reward - adversarial_alpha * true_reward
 
     @staticmethod
     def from_evaluation(
@@ -116,11 +141,12 @@ class PreferenceSet(BaseModel):
 
     def dpo_row(self, adversarial_alpha: float) -> dict | None:
         oversights = sorted(
-            self.oversights, key=lambda oversight: oversight.reward(adversarial_alpha)
+            self.oversights,
+            key=lambda oversight: oversight.simple_reward(adversarial_alpha),
         )
         reward_range = abs(
-            oversights[0].reward(adversarial_alpha)
-            - oversights[-1].reward(adversarial_alpha)
+            oversights[0].simple_reward(adversarial_alpha)
+            - oversights[-1].simple_reward(adversarial_alpha)
         )
 
         if reward_range < 1e-6:
@@ -457,14 +483,20 @@ def choose_best_clue_critique(
 def get_all_evals(game: Game, clue_words: list[str] | int) -> list[Evaluation]:
     if isinstance(clue_words, int):
         clue_words = random.sample(CLUE_WORDS_INDEXABLE, clue_words)
-    # Ensure the clue embeddings are cached
-    with ThreadPoolExecutor() as executor:
-        executor.map(get_clue_embedding, clue_words)
-    return [
-        evaluate_clue(game, ClueCritiques(clue=Clue(clue=word, targets=[])))
+    clue_critiques = [
+        ClueCritiques(clue=Clue(clue=word, targets=[]))
         for word in clue_words
         if word.upper() not in game.good_words + game.bad_words
     ]
+    # concurrency is only helpful when the cache isn't populated yet
+    # with ThreadPoolExecutor(max_workers=32) as executor:
+    #     return list(
+    #         executor.map(
+    #             partial(evaluate_clue, game),
+    #             clue_critiques,
+    #         )
+    #     )
+    return [evaluate_clue(game, clue) for clue in clue_critiques]
 
 
 def float_bucket(value: float) -> int:

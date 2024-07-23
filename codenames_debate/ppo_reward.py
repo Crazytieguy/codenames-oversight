@@ -1,5 +1,13 @@
 import math
-from functools import cache
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    _T = TypeVar("_T")
+
+    def cache(wrapped: _T) -> _T: ...
+
+else:
+    from functools import cache
 
 CALIBRATED_P_DEFAULT = 0.5
 CALIBRATED_P_2_DEFAULT = 0.1

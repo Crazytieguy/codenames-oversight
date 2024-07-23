@@ -43,6 +43,14 @@ def main(debate: Annotated[bool, typer.Option()], clue_words: int = 1024):
             print(p_set.model_dump_json())
 
 
+def run_params(games: list[Game], overseer: OverSeer, clue_words: int):
+    return [
+        p_set
+        for game in tqdm(games)
+        for p_set in gen_optimal_preference_sets(overseer, game, clue_words)
+    ]
+
+
 def gen_optimal_preference_sets(
     overseer: OverSeer,
     game: Game,
@@ -63,14 +71,6 @@ def gen_optimal_preference_sets(
             adversarial_alpha=adversarial_alpha,
         )
         for adversarial_alpha, oversight in oversights.items()
-    ]
-
-
-def run_params(games: list[Game], overseer: OverSeer, clue_words: int):
-    return [
-        p_set
-        for game in tqdm(games)
-        for p_set in gen_optimal_preference_sets(overseer, game, clue_words)
     ]
 
 
