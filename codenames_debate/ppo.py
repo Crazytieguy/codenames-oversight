@@ -44,7 +44,7 @@ BASE_MODEL: str
 LEARNING_RATE: float
 BATCH_SIZE: int
 KL_COEFF: float
-CALIBRATED_P_2: float
+INIT_RATIO: float
 
 
 @app.callback()
@@ -56,7 +56,7 @@ def set_params(
     learning_rate: float = 1e-4,
     batch_size: int = 128,
     kl_coeff: float = 0.1,
-    calibrated_p_2: float = 0.01,
+    init_ratio: float = 0.01,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -65,7 +65,7 @@ def set_params(
     global LEARNING_RATE
     global BATCH_SIZE
     global KL_COEFF
-    global CALIBRATED_P_2
+    global INIT_RATIO
     DATASET_FILE = dataset_file
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
@@ -73,7 +73,7 @@ def set_params(
     LEARNING_RATE = learning_rate
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
-    CALIBRATED_P_2 = calibrated_p_2
+    INIT_RATIO = init_ratio
 
 
 def main(overseer: OverSeer):
@@ -172,6 +172,12 @@ def main(overseer: OverSeer):
             oversights = [
                 overseer.oversee(e) if e is not None else None for e in evaluations
             ]
+            calibrate_p = sum(
+                len(o.valid_targets) / len(g.good_words)
+                for o, g in zip(oversights, games)
+                if o is not None
+            ) / len([o for o in oversights if o is not None])
+            logger.info(f"Calibrate p: {calibrate_p}")
             rewards = [
                 torch.tensor(
                     (
@@ -179,22 +185,25 @@ def main(overseer: OverSeer):
                             bad_words_in_game=len(g.bad_words),
                             n_targets=len(o.valid_targets),
                             kl_coeff=KL_COEFF,
-                            calibrated_p_2=CALIBRATED_P_2,
+                            calibrated_p=calibrate_p,
+                            init_ratio=INIT_RATIO,
                         )
                         if o.deciding_critique is not None
                         else reward_accept(
                             bad_words_in_game=len(g.bad_words),
                             n_targets=len(o.valid_targets),
+                            calibrated_p=calibrate_p,
                             kl_coeff=KL_COEFF,
-                            calibrated_p_2=CALIBRATED_P_2,
+                            init_ratio=INIT_RATIO,
                         )
                     )
                     if o is not None
                     else reward_reject(
                         bad_words_in_game=len(g.bad_words),
                         n_targets=0,
+                        calibrated_p=calibrate_p,
                         kl_coeff=KL_COEFF,
-                        calibrated_p_2=CALIBRATED_P_2,
+                        init_ratio=INIT_RATIO,
                     )
                 )
                 for g, o in zip(games, oversights)
