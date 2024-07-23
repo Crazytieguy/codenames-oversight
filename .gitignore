@@ -6,6 +6,6 @@ codenames-debate.pem
 huggingface-token.txt
 .python-version
 .env
-embedding_cache.sqlite
+embedding_cache.sqlite*
 .DS_Store
 nwl2023.txt

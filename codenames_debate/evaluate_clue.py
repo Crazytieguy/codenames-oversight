@@ -1,5 +1,5 @@
 import logging
-from functools import cache
+from typing import TYPE_CHECKING, TypeVar
 
 import backoff
 import numpy as np
@@ -7,6 +7,14 @@ from openai import OpenAI, RateLimitError
 
 from .embedding_cache import EmbeddingCache
 from .models import CLUE_WORDS, Clue, ClueCritiques, Evaluation, Game
+
+if TYPE_CHECKING:
+    _T = TypeVar("_T")
+
+    def cache(wrapped: _T) -> _T: ...
+
+else:
+    from functools import cache
 
 openai_client = OpenAI()
 embedding_cache = EmbeddingCache()
@@ -59,9 +67,8 @@ def get_game_word_embedding(word: str) -> np.ndarray:
     return get_embedding(word.title())
 
 
-@cache
 def get_clue_embedding(clue: str) -> np.ndarray:
-    return get_embedding(f"Q: {clue}") - get_embedding("Q: ") + get_embedding("A: ")
+    return get_embedding(f"Q: {clue}") - Q_COLON_EMBEDDING + A_COLON_EMBEDDING
 
 
 def get_embedding(word: str) -> np.ndarray:
@@ -70,6 +77,10 @@ def get_embedding(word: str) -> np.ndarray:
         embedding = get_openai_embedding_with_backoff(word)
         embedding_cache.insert(word, embedding)
     return embedding
+
+
+Q_COLON_EMBEDDING = get_embedding("Q: ")
+A_COLON_EMBEDDING = get_embedding("A: ")
 
 
 @backoff.on_exception(backoff.expo, RateLimitError, max_time=60)
