@@ -1,6 +1,5 @@
 import logging
 import sys
-from typing import Annotated
 
 import typer
 from tqdm import tqdm
@@ -17,28 +16,26 @@ from codenames_debate.oversight import (
 logging.basicConfig(level=logging.INFO)
 
 
-def main(debate: Annotated[bool, typer.Option()], clue_words: int = 1024):
+def main(clue_words: int = 2048):
     games = [Game.model_validate_json(line) for line in sys.stdin]
-    overseer_class = NegligentBiasedJudgeOverSeer if debate else NegligentBiasedOverSeer
-    all_optimization_params = [
+    all_overseers = [
         overseer_class(
             neglect_words=neglect_words,
             bias_neglected_words=bias_neglected_words,
             bias_non_neglected_words=bias_non_neglected_words,
             bias_factor=bias_factor,
         )
+        for overseer_class in [NegligentBiasedJudgeOverSeer, NegligentBiasedOverSeer]
         for neglect_words in [0, 1]
         for bias_neglected_words in {0, neglect_words}
         for bias_non_neglected_words in [0, 1]
         for bias_factor in (
             [1.0]
             if (bias_neglected_words + bias_non_neglected_words == 0)
-            else [0.7, 1.5]
+            else [0.64, 0.8, 1.25, 1.5625]
         )
     ]
-    for overseer in tqdm(
-        all_optimization_params, desc="Running negligent biased sweep"
-    ):
+    for overseer in tqdm(all_overseers, desc="Running negligent biased sweep"):
         for p_set in run_params(games, overseer, clue_words):
             print(p_set.model_dump_json())
 

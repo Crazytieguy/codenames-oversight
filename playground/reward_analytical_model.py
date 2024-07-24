@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 bad_words_in_game = 4  # As an example
 base_probability = lambda: 1 / (bad_words_in_game + 1)
 base_odds = lambda: base_probability() / (1 - base_probability())
-beta = 0.5
+beta = 0.1
 calibrated_p = 0.5
-init_ratio = 0.5
+init_ratio = 0.01
 calibrated_p_2 = lambda: (
     base_probability() * base_probability() * init_ratio / calibrated_p
 )
@@ -69,17 +69,10 @@ def plot_p_nth_target(n: int, p_accumulated: float):
 def plot_several_calibrated_p(n: int, p_accumulated: float):
     global calibrated_p
     global calibrated_p_2
-    calibrated_p = 0.2
     x = [p / 100 for p in range(101)]
-    y = [p_nth_target(n, p_accumulated, p) for p in x]
-    plt.plot(x, y)
-    calibrated_p = 0.3
-    y = [p_nth_target(n, p_accumulated, p) for p in x]
-    plt.plot(x, y)
-    calibrated_p = 0.4
-    y = [p_nth_target(n, p_accumulated, p) for p in x]
-    plt.plot(x, y)
+    for p in [0.05 * i for i in range(1, 20)]:
+        calibrated_p = p
+        y = [p_nth_target(n, p_accumulated, p) for p in x]
+        plt.plot(x, y)
     calibrated_p = 0.5
-    y = [p_nth_target(n, p_accumulated, p) for p in x]
-    plt.plot(x, y)
     plt.show()
