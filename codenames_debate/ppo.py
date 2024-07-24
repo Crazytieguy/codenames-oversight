@@ -169,8 +169,8 @@ def main(overseer: OverSeer):
                 else None
                 for game, clue in zip(games, clues)
             ]
-            mean_true_score = sum(e.score for e in evaluations if e is not None) / len(
-                [e for e in evaluations if e is not None]
+            mean_true_score = sum(e.score for e in evaluations if e is not None) / (
+                len([e for e in evaluations if e is not None]) or 1
             )
             logger.info(f"Mean true score: {mean_true_score}")
             oversights = [
@@ -180,7 +180,7 @@ def main(overseer: OverSeer):
                 len(o.valid_targets) / len(g.good_words)
                 for o, g in zip(oversights, games)
                 if o is not None
-            ) / len([o for o in oversights if o is not None])
+            ) / (len([o for o in oversights if o is not None]) or 1)
             logger.info(f"Calibrate p: {calibrate_p}")
             rewards = [
                 torch.tensor(
