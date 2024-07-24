@@ -263,8 +263,8 @@ def negligent_biased(
 def safe[T](f: Callable[..., T], *args) -> T | None:
     try:
         return f(*args)
-    except Exception:
-        logging.error(f"Error running {f.__name__} on inputs {args}")
+    except Exception as e:
+        logging.error(f"Error running {f.__name__}: {e}")
         return None
 
 

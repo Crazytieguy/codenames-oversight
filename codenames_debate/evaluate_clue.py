@@ -1,4 +1,3 @@
-import logging
 from typing import TYPE_CHECKING, TypeVar
 
 import backoff
@@ -28,17 +27,13 @@ def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
     I've decided not to allow ending the turn prematurely, for simplicity.
     """
     clue = clue_critiques.clue
-    try:
-        score, similarities = evaluate_clue_inner(game, clue)
-        return Evaluation(
-            game=game,
-            clue_critiques=clue_critiques,
-            score=score,
-            similarities=similarities,
-        )
-    except Exception as e:
-        logging.error(f"Failed to evaluate clue: {e}")
-        raise
+    score, similarities = evaluate_clue_inner(game, clue)
+    return Evaluation(
+        game=game,
+        clue_critiques=clue_critiques,
+        score=score,
+        similarities=similarities,
+    )
 
 
 def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, dict[str, float]]:
