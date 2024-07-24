@@ -169,6 +169,10 @@ def main(overseer: OverSeer):
                 else None
                 for game, clue in zip(games, clues)
             ]
+            mean_true_score = sum(e.score for e in evaluations if e is not None) / len(
+                [e for e in evaluations if e is not None]
+            )
+            logger.info(f"Mean true score: {mean_true_score}")
             oversights = [
                 overseer.oversee(e) if e is not None else None for e in evaluations
             ]

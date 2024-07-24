@@ -36,8 +36,8 @@ def evaluate_clue(game: Game, clue_critiques: ClueCritiques) -> Evaluation:
             score=score,
             similarities=similarities,
         )
-    except Exception:
-        logging.exception("Failed to evaluate clue")
+    except Exception as e:
+        logging.error(f"Failed to evaluate clue: {e}")
         raise
 
 
