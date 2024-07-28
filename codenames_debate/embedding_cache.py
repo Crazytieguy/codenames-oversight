@@ -14,7 +14,7 @@ class EmbeddingCache:
         if hasattr(self.local, "conn"):
             return self.local.conn
 
-        self.local.conn = conn = sqlite3.connect(DB_PATH, autocommit=True)
+        self.local.conn = conn = sqlite3.connect(DB_PATH, autocommit=True, timeout=30)
         self.local.insert_count = 0
         cursor = conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -27,6 +27,7 @@ class EmbeddingCache:
             embedding BLOB
         )
         """)
+        cursor.close()
         return conn
 
     def insert(self, word: str, embedding: np.ndarray) -> None:
@@ -40,6 +41,7 @@ class EmbeddingCache:
         self.local.insert_count += 1
         if self.local.insert_count % 1000 == 0:
             cursor.execute("PRAGMA optimize")
+        cursor.close()
 
     def get(self, word: str) -> np.ndarray | None:
         conn = self.get_connection()
@@ -49,6 +51,7 @@ class EmbeddingCache:
             (word,),
         )
         result = cursor.fetchone()
+        cursor.close()
         if result is not None:
             # Convert the binary data back to a NumPy array
             embedding_blob = result[0]

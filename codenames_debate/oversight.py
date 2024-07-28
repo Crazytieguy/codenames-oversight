@@ -1,8 +1,7 @@
 import abc
 import logging
 import random
-
-# from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum, auto
 from functools import partial
 from typing import Annotated, Literal, Optional, Self, Union
@@ -480,6 +479,9 @@ def choose_best_clue_critique(
     }
 
 
+EXECUTOR = ThreadPoolExecutor(max_workers=16)
+
+
 def get_all_evals(game: Game, clue_words: list[str] | int) -> list[Evaluation]:
     if isinstance(clue_words, int):
         clue_words = random.sample(CLUE_WORDS_INDEXABLE, clue_words)
@@ -489,14 +491,13 @@ def get_all_evals(game: Game, clue_words: list[str] | int) -> list[Evaluation]:
         if word.upper() not in game.good_words + game.bad_words
     ]
     # concurrency is only helpful when the cache isn't populated yet
-    # with ThreadPoolExecutor(max_workers=32) as executor:
-    #     return list(
-    #         executor.map(
-    #             partial(evaluate_clue, game),
-    #             clue_critiques,
-    #         )
-    #     )
-    return [evaluate_clue(game, clue) for clue in clue_critiques]
+    return list(
+        EXECUTOR.map(
+            partial(evaluate_clue, game),
+            clue_critiques,
+        )
+    )
+    # return [evaluate_clue(game, clue) for clue in clue_critiques]
 
 
 def float_bucket(value: float) -> int:
