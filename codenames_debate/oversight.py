@@ -403,9 +403,10 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
         bias_map = {}
         for i, word in enumerate(game.bad_words):
             words_from_last = len(game.bad_words) - i - 1
-            if i < self.bias_neglected_words:
-                bias_map[word] = self.bias_factor
-            elif words_from_last < self.bias_non_neglected_words:
+            if (
+                i < self.bias_neglected_words
+                or words_from_last < self.bias_non_neglected_words
+            ):
                 bias_map[word] = self.bias_factor
             else:
                 bias_map[word] = 1.0
@@ -444,8 +445,9 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
             adjusted_similarities = eval.similarities.copy()
             for word in game.bad_words[: self.bias_neglected_words]:
                 adjusted_similarities[word] *= self.bias_factor
-            for word in game.bad_words[-self.bias_non_neglected_words :]:
-                adjusted_similarities[word] *= self.bias_factor
+            if self.bias_non_neglected_words > 0:
+                for word in game.bad_words[-self.bias_non_neglected_words :]:
+                    adjusted_similarities[word] *= self.bias_factor
             best_bad_word = max(game.bad_words, key=adjusted_similarities.__getitem__)
             optimal_targets = [
                 word
