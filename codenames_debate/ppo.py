@@ -30,7 +30,7 @@ from codenames_debate.oversight import (
 
 from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Game
-from .ppo_reward import reward_accept, reward_reject
+from .ppo_reward import approximate_calibrate_p, reward_accept, reward_reject
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,7 +44,6 @@ BASE_MODEL: str
 LEARNING_RATE: float
 BATCH_SIZE: int
 KL_COEFF: float
-INIT_RATIO: float
 
 
 @app.callback()
@@ -56,7 +55,6 @@ def set_params(
     learning_rate: float = 1e-4,
     batch_size: int = 128,
     kl_coeff: float = 0.1,
-    init_ratio: float = 0.01,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -73,7 +71,6 @@ def set_params(
     LEARNING_RATE = learning_rate
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
-    INIT_RATIO = init_ratio
 
 
 def main(overseer: OverSeer):
@@ -176,11 +173,7 @@ def main(overseer: OverSeer):
             oversights = [
                 overseer.oversee(e) if e is not None else None for e in evaluations
             ]
-            calibrate_p = sum(
-                len(o.valid_targets) / len(g.good_words)
-                for o, g in zip(oversights, games)
-                if o is not None
-            ) / (len([o for o in oversights if o is not None]) or 1)
+            calibrate_p = approximate_calibrate_p(oversights, games)
             logger.info(f"Calibrate p: {calibrate_p}")
             rewards = [
                 torch.tensor(
@@ -190,7 +183,6 @@ def main(overseer: OverSeer):
                             n_targets=len(o.valid_targets),
                             kl_coeff=KL_COEFF,
                             calibrated_p=calibrate_p,
-                            init_ratio=INIT_RATIO,
                         )
                         if o.deciding_critique is not None
                         else reward_accept(
@@ -198,12 +190,11 @@ def main(overseer: OverSeer):
                             n_targets=len(o.valid_targets),
                             calibrated_p=calibrate_p,
                             kl_coeff=KL_COEFF,
-                            init_ratio=INIT_RATIO,
                         )
                     )
                     if o is not None
                     # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
-                    else -20 * KL_COEFF
+                    else -40 * KL_COEFF
                 )
                 for g, o in zip(games, oversights)
             ]

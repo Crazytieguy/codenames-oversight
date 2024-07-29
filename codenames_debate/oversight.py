@@ -17,7 +17,6 @@ from .models import (
     Evaluation,
     Game,
 )
-from .ppo_reward import reward_accept, reward_reject
 
 logger = logging.getLogger(__name__)
 CLUE_WORDS_INDEXABLE = list(CLUE_WORDS)
@@ -65,29 +64,6 @@ class OverSight(BaseModel):
 
     def simple_reward(self, adversarial_alpha: float) -> float:
         return self.expected_score - adversarial_alpha * self.ground_truth_score
-
-    def ppo_reward(
-        self, bad_words_in_game: int, kl_coeff: float, adversarial_alpha: float
-    ) -> float:
-        self_reward = (
-            reward_accept(
-                bad_words_in_game=bad_words_in_game,
-                kl_coeff=kl_coeff,
-                n_targets=len(self.valid_targets),
-            )
-            if self.deciding_critique is None
-            else reward_reject(
-                bad_words_in_game=bad_words_in_game,
-                kl_coeff=kl_coeff,
-                n_targets=len(self.valid_targets),
-            )
-        )
-        true_reward = reward_accept(
-            bad_words_in_game=bad_words_in_game,
-            kl_coeff=kl_coeff,
-            n_targets=self.ground_truth_score,
-        )
-        return self_reward - adversarial_alpha * true_reward
 
     @staticmethod
     def from_evaluation(

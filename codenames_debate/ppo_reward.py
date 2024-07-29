@@ -1,6 +1,9 @@
 import math
 from typing import TYPE_CHECKING, TypeVar
 
+from .models import Game
+from .oversight import OverSight
+
 if TYPE_CHECKING:
     _T = TypeVar("_T")
 
@@ -9,9 +12,6 @@ if TYPE_CHECKING:
 else:
     from functools import cache
 
-DEFAULT_CALIBRATED_P = 0.5
-DEFAULT_INIT_RATIO = 0.1
-
 
 @cache
 def reward_reject(
@@ -19,14 +19,12 @@ def reward_reject(
     bad_words_in_game: int,
     n_targets: int,
     kl_coeff: float,
-    calibrated_p: float = DEFAULT_CALIBRATED_P,
-    init_ratio: float = DEFAULT_INIT_RATIO,
+    calibrated_p: float,
 ) -> float:
     return initial_reward_reject(
         bad_words_in_game=bad_words_in_game,
         kl_coeff=kl_coeff,
         calibrated_p=calibrated_p,
-        init_ratio=init_ratio,
     ) + (n_targets - 1) * kl_coeff * (
         log_odds(calibrated_p) - log_odds(base_probability(bad_words_in_game))
     )
@@ -38,8 +36,7 @@ def reward_accept(
     bad_words_in_game: int,
     n_targets: int,
     kl_coeff: float,
-    calibrated_p: float = DEFAULT_CALIBRATED_P,
-    init_ratio: float = DEFAULT_INIT_RATIO,
+    calibrated_p: float,
 ) -> float:
     if n_targets == 0:
         return 0.0
@@ -49,7 +46,6 @@ def reward_accept(
             n_targets=n_targets - 1,
             kl_coeff=kl_coeff,
             calibrated_p=calibrated_p,
-            init_ratio=init_ratio,
         )
         + kl_coeff
         * (log_odds(calibrated_p) - log_odds(base_probability(bad_words_in_game)))
@@ -59,7 +55,6 @@ def reward_accept(
             n_targets=n_targets,
             kl_coeff=kl_coeff,
             calibrated_p=calibrated_p,
-            init_ratio=init_ratio,
         )
     ) / calibrated_p
 
@@ -69,16 +64,32 @@ def initial_reward_reject(
     bad_words_in_game: int,
     kl_coeff: float,
     calibrated_p: float,
-    init_ratio: float,
 ) -> float:
     base_p = base_probability(bad_words_in_game)
-    calibrated_p_2 = base_p * base_p * init_ratio / calibrated_p
-    ratio = calibrated_p_2 / calibrated_p
-    return (kl_coeff / (1 - ratio)) * (
-        log_odds(calibrated_p_2)
-        - log_odds(base_p)
-        - ratio * (log_odds(calibrated_p) - log_odds(base_p))
+    return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - 1) / (
+        1 - calibrated_p
     )
+
+
+def approximate_calibrate_p(
+    oversights: list[OverSight | None], games: list[Game]
+) -> float:
+    count_valid_oversights = len([o for o in oversights if o is not None])
+    if count_valid_oversights == 0:
+        return 0.5  # doesn't actually matter, won't be used
+    sum_cp = sum(
+        approximate_true_score(o, g) / len(g.good_words)
+        for o, g in zip(oversights, games)
+        if o is not None
+    )
+    return sum_cp / count_valid_oversights
+
+
+def approximate_true_score(oversight: OverSight, game: Game) -> float:
+    base_p = base_probability(len(game.bad_words))
+    # Assume that the guesser randomly picks untargetted words at the base probability
+    unaccounted_score = base_p * (len(game.good_words) - oversight.expected_score)
+    return oversight.expected_score + unaccounted_score
 
 
 def log_odds(p: float) -> float:
