@@ -88,6 +88,19 @@ class Evaluation(BaseModel):
     score: int
     similarities: dict[str, float]
 
+    def good_picks(self) -> list[str]:
+        picks = []
+        best_bad_word_similarity = max(
+            self.similarities[word] for word in self.game.bad_words
+        )
+        for word in sorted(
+            self.game.good_words, key=self.similarities.__getitem__, reverse=True
+        ):
+            if self.similarities[word] <= best_bad_word_similarity:
+                break
+            picks.append(word)
+        return picks
+
 
 def generate_game(num_words: int = 20) -> Game:
     words = random.sample(GAME_WORDS, num_words)

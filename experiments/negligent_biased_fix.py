@@ -26,8 +26,8 @@ def main(clue_words: int = 2048):
             bias_factor=bias_factor,
         )
         for overseer_class in [
-            NegligentBiasedJudgeOverSeer,
-            # NegligentBiasedOverSeer
+            # NegligentBiasedJudgeOverSeer,
+            NegligentBiasedOverSeer
         ]
         for neglect_words in [
             # 0,

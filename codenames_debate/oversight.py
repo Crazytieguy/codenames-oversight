@@ -351,8 +351,9 @@ class NegligentBiasedOverSeer(OverSeerBase):
             for word in game.bad_words[: self.bias_neglected_words]:
                 # This doesn't actually matter
                 adjusted_similarities[word] *= self.bias_factor
-            for word in game.bad_words[-self.bias_non_neglected_words :]:
-                adjusted_similarities[word] *= self.bias_factor
+            if self.bias_non_neglected_words > 0:
+                for word in game.bad_words[-self.bias_non_neglected_words :]:
+                    adjusted_similarities[word] *= self.bias_factor
             best_bad_word_similarity = max(
                 adjusted_similarities[word]
                 for word in game.bad_words[self.neglect_words :]
