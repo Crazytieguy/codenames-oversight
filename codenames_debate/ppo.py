@@ -194,7 +194,12 @@ def main(overseer: OverSeer):
                     )
                     if o is not None
                     # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
-                    else -40 * KL_COEFF
+                    else -reward_accept(
+                        bad_words_in_game=len(g.bad_words),
+                        n_targets=1,
+                        calibrated_p=calibrate_p,
+                        kl_coeff=KL_COEFF,
+                    )
                 )
                 for g, o in zip(games, oversights)
             ]

@@ -76,7 +76,8 @@ def approximate_calibrate_p(
 ) -> float:
     count_valid_oversights = len([o for o in oversights if o is not None])
     if count_valid_oversights == 0:
-        return 0.5  # doesn't actually matter, won't be used
+        # doesn't matter much
+        return base_probability(len(games[0].bad_words))
     sum_cp = sum(
         approximate_true_score(o, g) / len(g.good_words)
         for o, g in zip(oversights, games)
