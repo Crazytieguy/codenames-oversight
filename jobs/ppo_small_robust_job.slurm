@@ -9,12 +9,10 @@
 #SBATCH --mem=64G
 #SBATCH -c 1
 
-#SBATCH --array=0-8
+#SBATCH --array=0-9
 
-learning_rates=(1.5e-4 2.0e-4 2.5e-4)
-kl_coeffs=(0.04 0.08 0.16)
+kl_coeffs=(0.06 0.07 0.08 0.09 0.105 0.12 0.14 0.16 0.185 0.215)
 
-learning_rate=${learning_rates[(($SLURM_ARRAY_TASK_ID / 3))]}
-kl_coeff=${kl_coeffs[(($SLURM_ARRAY_TASK_ID % 3))]}
+kl_coeff=${kl_coeffs[$SLURM_ARRAY_TASK_ID]}
 
-singularity exec --nv --overlay /scratch/yt3114/conda.ext3:ro /scratch/work/public/singularity/cuda12.2.2-cudnn8.9.4-devel-ubuntu22.04.3.sif /bin/bash -c "jobs/ppo_small_robust.sh $learning_rate $kl_coeff"
+singularity exec --nv --overlay /scratch/yt3114/conda.ext3:ro /scratch/work/public/singularity/cuda12.2.2-cudnn8.9.4-devel-ubuntu22.04.3.sif /bin/bash -c "jobs/ppo_small_robust.sh 2.0e-4 $kl_coeff"

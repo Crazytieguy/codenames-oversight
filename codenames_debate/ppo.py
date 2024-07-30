@@ -212,6 +212,9 @@ def main(overseer: OverSeer):
 
         with timer("ppo step"):
             stats = ppo_trainer.step(inputs, outputs, rewards)  # type: ignore
+            stats.update(
+                {"mean_true_score": mean_true_score, "calibrate_p": calibrate_p}
+            )
             ppo_trainer.log_stats(stats, batch, rewards)  # type: ignore
 
     ppo_trainer.save_pretrained(OUTPUT_DIR)
