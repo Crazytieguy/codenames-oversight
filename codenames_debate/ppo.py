@@ -53,10 +53,10 @@ def set_params(
     model_dir: str,
     output_dir: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    learning_rate: float = 1e-4,
-    batch_size: int = 128,
+    learning_rate: float = 4e-5,
+    batch_size: int = 256,
     kl_coeff: float = 0.05,
-    ppo_epochs: int = 2,
+    ppo_epochs: int = 4,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -197,12 +197,7 @@ def main(overseer: OverSeer):
                     )
                     if o is not None
                     # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
-                    else -reward_accept(
-                        bad_words_in_game=len(g.bad_words),
-                        n_targets=1,
-                        calibrated_p=calibrate_p,
-                        kl_coeff=KL_COEFF,
-                    )
+                    else -1.0
                 )
                 for g, o in zip(games, oversights)
             ]
@@ -216,7 +211,7 @@ def main(overseer: OverSeer):
         with timer("ppo step"):
             stats = ppo_trainer.step(inputs, outputs, rewards)  # type: ignore
             stats.update(
-                {"mean_true_score": mean_true_score, "calibrate_p": calibrate_p}
+                {"env/mean_true_score": mean_true_score, "env/calibrate_p": calibrate_p}
             )
             ppo_trainer.log_stats(stats, batch, rewards)  # type: ignore
 
