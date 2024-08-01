@@ -45,6 +45,7 @@ LEARNING_RATE: float
 BATCH_SIZE: int
 KL_COEFF: float
 PPO_EPOCHS: int
+ADVERSARIAL_ALPHA: float
 
 
 @app.callback()
@@ -57,6 +58,7 @@ def set_params(
     batch_size: int = 256,
     kl_coeff: float = 0.05,
     ppo_epochs: int = 4,
+    adversarial_alpha: float = 0.0,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -66,6 +68,7 @@ def set_params(
     global BATCH_SIZE
     global KL_COEFF
     global PPO_EPOCHS
+    global ADVERSARIAL_ALPHA
     DATASET_FILE = dataset_file
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
@@ -74,6 +77,7 @@ def set_params(
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
     PPO_EPOCHS = ppo_epochs
+    ADVERSARIAL_ALPHA = adversarial_alpha
 
 
 def main(overseer: OverSeer):
@@ -195,6 +199,7 @@ def main(overseer: OverSeer):
                             kl_coeff=KL_COEFF,
                         )
                     )
+                    - ADVERSARIAL_ALPHA * o.ground_truth_score
                     if o is not None
                     # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
                     else -1.0
