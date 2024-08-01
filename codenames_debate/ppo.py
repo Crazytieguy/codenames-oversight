@@ -44,6 +44,7 @@ BASE_MODEL: str
 LEARNING_RATE: float
 BATCH_SIZE: int
 KL_COEFF: float
+PPO_EPOCHS: int
 
 
 @app.callback()
@@ -54,7 +55,8 @@ def set_params(
     base_model: str = "meta-llama/Llama-2-7b-hf",
     learning_rate: float = 1e-4,
     batch_size: int = 128,
-    kl_coeff: float = 0.1,
+    kl_coeff: float = 0.05,
+    ppo_epochs: int = 2,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -63,7 +65,7 @@ def set_params(
     global LEARNING_RATE
     global BATCH_SIZE
     global KL_COEFF
-    global INIT_RATIO
+    global PPO_EPOCHS
     DATASET_FILE = dataset_file
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
@@ -71,6 +73,7 @@ def set_params(
     LEARNING_RATE = learning_rate
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
+    PPO_EPOCHS = ppo_epochs
 
 
 def main(overseer: OverSeer):
@@ -106,7 +109,7 @@ def main(overseer: OverSeer):
 
     ppo_config = PPOConfig(
         learning_rate=LEARNING_RATE,
-        ppo_epochs=1,
+        ppo_epochs=PPO_EPOCHS,
         batch_size=BATCH_SIZE,
         mini_batch_size=mini_batch_size,
         gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,

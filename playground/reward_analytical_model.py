@@ -12,9 +12,9 @@ calibrated_p = 0.5
 
 
 def initial_reward_bad() -> float:
-    return (beta * (log_odds(calibrated_p) - log_odds(base_probability())) - 1) / (
-        1 - calibrated_p
-    )
+    return (
+        beta * (log_odds(calibrated_p) - log_odds(base_probability())) - calibrated_p
+    ) / (1 - calibrated_p)
 
 
 def log_odds(p: float) -> float:
@@ -65,7 +65,7 @@ def plot_p_nth_target(n: int, p_accumulated: float):
 def plot_several_calibrated_p(n: int, p_accumulated: float):
     global calibrated_p
     x = [p / 100 for p in range(101)]
-    for p in [0.05 * i for i in range(1, 20)]:
+    for p in [0.05 * i for i in range(4, 16)]:
         calibrated_p = p
         y = [p_nth_target(n, p_accumulated, p) for p in x]
         plt.plot(x, y)

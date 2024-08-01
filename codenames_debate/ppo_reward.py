@@ -66,7 +66,7 @@ def initial_reward_reject(
     calibrated_p: float,
 ) -> float:
     base_p = base_probability(bad_words_in_game)
-    return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - 1) / (
+    return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - calibrated_p) / (
         1 - calibrated_p
     )
 
@@ -77,20 +77,24 @@ def approximate_calibrate_p(
     count_valid_oversights = len([o for o in oversights if o is not None])
     if count_valid_oversights == 0:
         # doesn't matter much
-        return base_probability(len(games[0].bad_words))
-    sum_cp = sum(
-        approximate_true_score(o, g) / len(g.good_words)
+        return sum(base_probability(len(g.bad_words)) for g in games) / len(games)
+    sum_untargetted_expected_value = sum(
+        base_probability(len(g.bad_words)) * (len(g.good_words) - len(o.valid_targets))
         for o, g in zip(oversights, games)
         if o is not None
     )
-    return sum_cp / count_valid_oversights
-
-
-def approximate_true_score(oversight: OverSight, game: Game) -> float:
-    base_p = base_probability(len(game.bad_words))
-    # Assume that the guesser randomly picks untargetted words at the base probability
-    unaccounted_score = base_p * (len(game.good_words) - oversight.expected_score)
-    return oversight.expected_score + unaccounted_score
+    sum_accepted_value = sum(o.expected_score for o in oversights if o is not None)
+    max_possible = sum(
+        len(g.good_words) for o, g in zip(oversights, games) if o is not None
+    )
+    sum_untested_targets = sum(
+        len(o.valid_targets) - 1
+        for o in oversights
+        if o is not None and o.deciding_critique is not None
+    )
+    return (sum_untargetted_expected_value + sum_accepted_value) / (
+        max_possible - sum_untested_targets
+    )
 
 
 def log_odds(p: float) -> float:
