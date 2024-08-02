@@ -1,11 +1,12 @@
 # Based on https://github.com/huggingface/trl/blob/v0.9.6/trl/trainer/rloo_trainer.py
+# The only modification here is using a reward function rather than a reward model.
 # fmt: off
 
 import gc
 import os
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -35,7 +36,6 @@ from trl.trainer.utils import (
     first_true_indices,
     forward,
     generate,
-    get_reward,
     prepare_deepspeed,
     print_rich_table,
     truncate_response,
@@ -51,7 +51,8 @@ class RLOOTrainer(Trainer):
         tokenizer: PreTrainedTokenizer,
         policy: nn.Module,
         ref_policy: nn.Module,
-        reward_model: nn.Module,
+        # Takes in postprocessed_query_response and returnes scores
+        reward_function: Callable[[torch.Tensor], torch.Tensor],
         train_dataset: Dataset,
         data_collator: Optional[DataCollatorWithPadding] = None,
         eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
@@ -72,7 +73,7 @@ class RLOOTrainer(Trainer):
         self.policy.generation_config.pad_token_id = None  # generate tokens without truncation / padding
 
         self.ref_policy = ref_policy
-        self.reward_model = reward_model
+        self.reward_function = reward_function
         self.train_dataset = train_dataset
         self.train_dataset_len = len(train_dataset)
         self.data_collator = data_collator
@@ -119,7 +120,7 @@ class RLOOTrainer(Trainer):
         #########
         # setup model, optimizer, and others
         #########
-        for module in [policy, ref_policy, reward_model]:
+        for module in [policy, ref_policy]:
             disable_dropout_in_model(module)
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
@@ -199,7 +200,7 @@ class RLOOTrainer(Trainer):
         optimizer = self.optimizer
         model = self.model
         ref_policy = self.ref_policy
-        reward_model = self.reward_model
+        reward_function = self.reward_function
         tokenizer = self.tokenizer
         dataloader = self.dataloader
         device = accelerator.device
@@ -243,7 +244,6 @@ class RLOOTrainer(Trainer):
                 postprocessed_responses = []
                 logprobs = []
                 ref_logprobs = []
-                scores = []
                 sequence_lengths = []
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
                     for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
@@ -277,12 +277,7 @@ class RLOOTrainer(Trainer):
                                 args.stop_token_id, tokenizer.pad_token_id, response
                             )
 
-                        # Response Processing 2. run reward model on the truncated responses
-                        postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                         sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
-                        _, score, _ = get_reward(
-                            reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
-                        )
 
                         query_responses.append(query_response)
                         responses.append(response)
@@ -290,15 +285,16 @@ class RLOOTrainer(Trainer):
                         logprobs.append(logprob)
                         ref_logprobs.append(ref_logprob)
                         sequence_lengths.append(sequence_length)
-                        scores.append(score)
+                
                 query_responses = torch.cat(query_responses, 0)
                 responses = torch.cat(responses, 0)
                 postprocessed_responses = torch.cat(postprocessed_responses, 0)
                 logprobs = torch.cat(logprobs, 0)
                 ref_logprobs = torch.cat(ref_logprobs, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
-                scores = torch.cat(scores, 0)
-                del (logprob, ref_logprob, score)
+                postprocessed_query_responses = torch.cat((queries, postprocessed_responses), 1)
+                scores = reward_function(postprocessed_query_responses)
+                del (logprob, ref_logprob)
                 torch.cuda.empty_cache()
                 gc.collect()
 
@@ -453,9 +449,7 @@ class RLOOTrainer(Trainer):
                 table["model response"].extend(gather_object(tokenizer.batch_decode(postprocessed_response)))
 
                 postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
-                _, score, _ = get_reward(
-                    self.reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
-                )
+                score = self.reward_function(postprocessed_query_response)
                 table["score"].extend(self.accelerator.gather(score).float().cpu().numpy())
 
             if sampling:

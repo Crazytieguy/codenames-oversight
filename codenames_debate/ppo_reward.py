@@ -92,9 +92,11 @@ def approximate_calibrate_p(
         for o in oversights
         if o is not None and o.deciding_critique is not None
     )
-    return (sum_untargetted_expected_value + sum_accepted_value) / (
+    calibrate_p = (sum_untargetted_expected_value + sum_accepted_value) / (
         max_possible - sum_untested_targets
     )
+    # Calibrate_p = 0 would cause errors
+    return max(calibrate_p, 0.05)
 
 
 def log_odds(p: float) -> float:
