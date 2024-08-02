@@ -43,7 +43,9 @@ Targets: {', '.join(self.targets)}"""
         if not targets_line.startswith("Targets:"):
             raise ValueError(f"Expected 'Targets:', got {targets_line}")
         clue = clue_line[len("Clue: ") :]
-        targets = targets_line.removeprefix("Targets:").strip().split(", ")
+        targets = [
+            t for t in targets_line.removeprefix("Targets:").strip().split(", ") if t
+        ]
         return Clue(clue=clue, targets=targets)
 
 
