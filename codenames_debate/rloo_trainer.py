@@ -17,6 +17,7 @@ from accelerate import Accelerator
 from accelerate.utils import broadcast, gather_object
 from datasets import Dataset
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import (
     DataCollatorWithPadding,
     GenerationConfig,
@@ -185,8 +186,12 @@ class RLOOTrainer(Trainer):
             )
             self.deepspeed = self.model
         else:
-            self.ref_policy = self.ref_policy.to(self.accelerator.device)
-            self.reward_model = self.reward_model.to(self.accelerator.device)
+            pass
+            # got ValueError: `.to` is not supported for `4-bit` or `8-bit` bitsandbytes models.
+            # Please use the model as it is, since the model has already been set to the correct devices
+            # and casted to the correct `dtype`.
+            # self.ref_policy = self.ref_policy.to(self.accelerator.device)
+            # self.reward_model = self.reward_model.to(self.accelerator.device)
 
     def get_train_dataloader(self) -> DataLoader:
         return self.dataloader
@@ -219,7 +224,6 @@ class RLOOTrainer(Trainer):
             do_sample=True,
         )
 
-        accelerator.print("===training policy===")
         global_step = 0
         start_time = time.time()
         stats_shape = (args.num_ppo_epochs, args.num_mini_batches, args.gradient_accumulation_steps)
@@ -231,7 +235,7 @@ class RLOOTrainer(Trainer):
         entropy_stats = torch.zeros(stats_shape, device=device)
         ratio_stats = torch.zeros(stats_shape, device=device)
         model.train()
-        for update in range(1, args.num_updates + 1):
+        for update in tqdm(range(1, args.num_updates + 1), total=args.num_updates, desc="Running RLOO"):
             global_step += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
@@ -293,7 +297,7 @@ class RLOOTrainer(Trainer):
                 ref_logprobs = torch.cat(ref_logprobs, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 postprocessed_query_responses = torch.cat((queries, postprocessed_responses), 1)
-                scores = reward_function(postprocessed_query_responses)
+                scores = reward_function(postprocessed_query_responses).to(self.accelerator.device)
                 del (logprob, ref_logprob)
                 torch.cuda.empty_cache()
                 gc.collect()

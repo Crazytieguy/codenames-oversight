@@ -42,6 +42,7 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 DATASET_FILE: str
 MODEL_DIR: str
 OUTPUT_DIR: str
+BASE_MODEL: str
 LEARNING_RATE: float
 BATCH_SIZE: int
 KL_COEFF: float
@@ -54,15 +55,17 @@ def set_params(
     dataset_file: str,
     model_dir: str,
     output_dir: str,
-    learning_rate: float = 5e-5,
-    batch_size: int = 128,
-    kl_coeff: float = 0.05,
+    base_model: str = "meta-llama/Llama-2-7b-hf",
+    learning_rate: float = 1e-4,
+    batch_size: int = 256,
+    kl_coeff: float = 0.1,
     ppo_epochs: int = 4,
     adversarial_alpha: float = 0.0,
 ):
     global DATASET_FILE
     global MODEL_DIR
     global OUTPUT_DIR
+    global BASE_MODEL
     global LEARNING_RATE
     global BATCH_SIZE
     global KL_COEFF
@@ -71,6 +74,7 @@ def set_params(
     DATASET_FILE = dataset_file
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
+    BASE_MODEL = base_model
     LEARNING_RATE = learning_rate
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
@@ -98,13 +102,12 @@ def main(overseer: OverSeer):
     model = get_peft_model(ref_model, peft_config)
 
     tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
-        MODEL_DIR, add_eos_token=False, padding_side="left"
+        BASE_MODEL, add_eos_token=False, padding_side="left"
     )  # type: ignore
     tokenizer.pad_token = tokenizer.eos_token
 
     dataset = load_game_dataset(DATASET_FILE, tokenizer)
-    # critical for memory usage
-    mini_batch_size = 16
+    mini_batch_size = 32
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
@@ -116,7 +119,14 @@ def main(overseer: OverSeer):
         learning_rate=LEARNING_RATE,
         save_steps=16,
         logging_steps=1,
-        temperature=0.7,  # TODO: this is the default value and I don't know why it's not 1.0.
+        report_to=["tensorboard"],
+        # TODO: this is the default value and I don't know why it's not 1.0.
+        temperature=1.0,
+        stop_token="eos",
+        # Technically doesn't fit the longest possible response,
+        # but in that case the last targets are just cut off and it's fine
+        response_length=32,
+        num_sample_generations=0,
     )
     trainer = RLOOTrainer(
         config=config,
@@ -138,7 +148,7 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
         queries = []
         responses = []
         for query_response in query_responses:
-            query, response = query_response.split("\n\n")
+            query, response = query_response.split("\n\n", maxsplit=1)
             queries.append(query)
             responses.append(response)
 
@@ -153,12 +163,12 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
         mean_true_score = sum(e.score for e in evaluations if e is not None) / (
             len([e for e in evaluations if e is not None]) or 1
         )
-        logger.info(f"Mean true score: {mean_true_score}")
+        logger.info(f"Mean true score: {mean_true_score:.3f}")
         oversights = [
             overseer.oversee(e) if e is not None else None for e in evaluations
         ]
         calibrate_p = approximate_calibrate_p(oversights, games)
-        logger.info(f"Calibrate p: {calibrate_p}")
+        logger.info(f"Calibrate p: {calibrate_p:.3f}")
         rewards = [
             torch.tensor(
                 (
@@ -184,10 +194,18 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
             for g, o in zip(games, oversights)
         ]
         reward_counts = Counter([r.item() for r in rewards])
-        logger.info(f"Reward counts: {dict(sorted(reward_counts.most_common()))}")
+        reward_counts_str = ", ".join(
+            f"{k:.3f}: {v}" for k, v in sorted(reward_counts.most_common())
+        )
+        logger.info(f"Reward counts: {{{reward_counts_str}}}")
         for g, o in zip(games, oversights):
             if o is not None:
-                p_set = PreferenceSet(game=g, overseer=overseer, oversights=[o])
+                p_set = PreferenceSet(
+                    game=g,
+                    overseer=overseer,
+                    oversights=[o],
+                    adversarial_alpha=ADVERSARIAL_ALPHA,
+                )
                 print(p_set.model_dump_json())
 
         return torch.tensor(rewards)

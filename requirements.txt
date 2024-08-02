@@ -2,7 +2,7 @@ transformers==4.43.3
 peft
 trl==0.9.6
 bitsandbytes
-accelerate
+accelerate==0.33.0
 datasets
 scipy
 typer==0.9.0

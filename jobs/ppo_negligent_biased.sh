@@ -16,10 +16,10 @@ bias_non_neglected_words=${bias_non_neglected_words[$array_task_id]}
 bias_factor=${bias_factor[$array_task_id]}
 adversarial_alpha=${adversarial_alpha[$array_task_id]}
 
-echo "neglect_words: $neglect_words"
-echo "bias_neglected_words: $bias_neglected_words"
-echo "bias_non_neglected_words: $bias_non_neglected_words"
-echo "bias_factor: $bias_factor"
-echo "adversarial_alpha: $adversarial_alpha"
+>&2 echo "neglect_words: $neglect_words"
+>&2 echo "bias_neglected_words: $bias_neglected_words"
+>&2 echo "bias_non_neglected_words: $bias_non_neglected_words"
+>&2 echo "bias_factor: $bias_factor"
+>&2 echo "adversarial_alpha: $adversarial_alpha"
 
-python -m codenames_debate.ppo data/ppo-small-dataset.jsonl models/llama-7b-random-cluer-small-merged models/ppo_negligent_biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor negligent_biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
+python -m codenames_debate.ppo --adversarial-alpha $adversarial_alpha data/ppo-small-dataset.jsonl models/llama-7b-random-cluer-small-r-256-merged models/ppo_negligent_biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
