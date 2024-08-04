@@ -10,8 +10,8 @@
 #SBATCH -c 1
 #SBATCH --array=0-24
 
-kl_coeffs=(0.04 0.055 0.07 0.09 0.12)
-learning_rates=(1.5e-5 1.95e-5 2.55e-5 3.3e-5 4.3e-5)
+kl_coeffs=(0.028 0.036 0.047 0.062 0.08)
+learning_rates=(1.1e-5 1.4e-5 1.9e-5 2.5e-5 3.3e-5)
 
 task_id=$SLURM_ARRAY_TASK_ID
 kl_coeff=${kl_coeffs[$((task_id / 5))]}

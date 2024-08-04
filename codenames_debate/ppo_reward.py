@@ -76,27 +76,14 @@ def approximate_calibrate_p(
 ) -> float:
     count_valid_oversights = len([o for o in oversights if o is not None])
     if count_valid_oversights == 0:
-        # doesn't matter much
-        return sum(base_probability(len(g.bad_words)) for g in games) / len(games)
-    sum_untargetted_expected_value = sum(
-        base_probability(len(g.bad_words)) * (len(g.good_words) - len(o.valid_targets))
+        # doesn't matter
+        return 0.5
+    sum_p_t = sum(
+        len(o.valid_targets) / len(g.good_words)
         for o, g in zip(oversights, games)
         if o is not None
     )
-    sum_accepted_value = sum(o.expected_score for o in oversights if o is not None)
-    max_possible = sum(
-        len(g.good_words) for o, g in zip(oversights, games) if o is not None
-    )
-    sum_untested_targets = sum(
-        len(o.valid_targets) - 1
-        for o in oversights
-        if o is not None and o.deciding_critique is not None
-    )
-    calibrate_p = (sum_untargetted_expected_value + sum_accepted_value) / (
-        max_possible - sum_untested_targets
-    )
-    # Calibrate_p = 0 would cause errors
-    return max(calibrate_p, 0.05)
+    return sum_p_t / count_valid_oversights
 
 
 def log_odds(p: float) -> float:

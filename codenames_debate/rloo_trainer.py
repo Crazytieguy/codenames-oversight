@@ -44,7 +44,6 @@ from trl.trainer.utils import (
 
 INVALID_LOGPROB = 1.0
 
-
 class RLOOTrainer(Trainer):
     def __init__(
         self,
@@ -209,6 +208,8 @@ class RLOOTrainer(Trainer):
         tokenizer = self.tokenizer
         dataloader = self.dataloader
         device = accelerator.device
+
+        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
 
         def repeat_generator():
             while True:
@@ -414,6 +415,7 @@ class RLOOTrainer(Trainer):
                 metrics["lr"] = self.lr_scheduler.get_last_lr()[0]
                 metrics["episode"] = global_step
                 self.state.epoch = global_step / self.train_dataset_len  # used by self.log
+                self.state.global_step += 1
                 self.log(metrics)
             del kl, mean_kl, mean_entropy, scores
             torch.cuda.empty_cache()
@@ -421,6 +423,8 @@ class RLOOTrainer(Trainer):
 
             if args.num_sample_generations > 0 and (update - 1) % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)
+        
+        self.control = self.callback_handler.on_train_end(args, self.state, self.control)
 
     def generate_completions(self, sampling: bool = False):
         args = self.args

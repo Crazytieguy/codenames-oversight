@@ -56,9 +56,9 @@ def set_params(
     model_dir: str,
     output_dir: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    learning_rate: float = 1e-4,
+    learning_rate: float = 2e-5,
     batch_size: int = 256,
-    kl_coeff: float = 0.1,
+    kl_coeff: float = 0.06,
     ppo_epochs: int = 4,
     adversarial_alpha: float = 0.0,
 ):
@@ -169,8 +169,8 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
         ]
         calibrate_p = approximate_calibrate_p(oversights, games)
         logger.info(f"Calibrate p: {calibrate_p:.3f}")
-        rewards = [
-            torch.tensor(
+        rewards = torch.tensor(
+            [
                 (
                     reward_reject(
                         bad_words_in_game=len(g.bad_words),
@@ -190,9 +190,11 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
                 if o is not None
                 # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
                 else -1.0
-            )
-            for g, o in zip(games, oversights)
-        ]
+                for g, o in zip(games, oversights)
+            ]
+        )
+        mean_reward = torch.mean(rewards)
+        logger.info(f"Mean reward: {mean_reward:.3f}")
         reward_counts = Counter([r.item() for r in rewards])
         reward_counts_str = ", ".join(
             f"{k:.3f}: {v}" for k, v in sorted(reward_counts.most_common())
@@ -208,7 +210,7 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
                 )
                 print(p_set.model_dump_json())
 
-        return torch.tensor(rewards)
+        return rewards
 
     return reward_function
 
