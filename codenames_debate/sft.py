@@ -53,8 +53,8 @@ def main(
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=8,  # critical for memory usage
-        gradient_accumulation_steps=8,
-        learning_rate=1e-4,
+        gradient_accumulation_steps=16,
+        learning_rate=2e-4,
         logging_steps=1,
         num_train_epochs=1,
         max_steps=-1,
@@ -62,8 +62,8 @@ def main(
     )
 
     peft_config = LoraConfig(
-        r=64,
-        lora_alpha=32,
+        r=256,
+        lora_alpha=128,
         bias="none",
         task_type="CAUSAL_LM",
     )

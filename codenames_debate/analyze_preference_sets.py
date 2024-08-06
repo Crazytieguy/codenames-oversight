@@ -42,7 +42,7 @@ def main(dataset_file: Path):
         overseer_big_overestimates=("big_overestimate", "mean"),
         overseer_mistakes=("mistake", "mean"),
     )
-    print(out_df.to_csv())
+    print(out_df.to_csv(), end="")
 
 
 def is_mistake(row: pd.Series) -> bool:
