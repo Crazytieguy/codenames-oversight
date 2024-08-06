@@ -4,9 +4,9 @@ import sys
 import typer
 from tqdm import tqdm
 
-from codenames_debate.evaluate_clue import evaluate_clue
-from codenames_debate.models import Game
-from codenames_debate.oversight import (
+from codenames_oversight.evaluate_clue import evaluate_clue
+from codenames_oversight.models import Game
+from codenames_oversight.oversight import (
     NegligentBiasedJudgeOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,

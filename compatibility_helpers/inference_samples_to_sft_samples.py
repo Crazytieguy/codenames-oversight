@@ -1,7 +1,7 @@
 import random
 import sys
 
-from codenames_debate.models import Critique, Game, InferenceSample, SFTSample
+from codenames_oversight.models import Critique, Game, InferenceSample, SFTSample
 
 
 def random_critique(game: Game) -> Critique:

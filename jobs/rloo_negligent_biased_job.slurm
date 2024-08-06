@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=codenames_debate_rloo_negligent_biased
+#SBATCH --job-name=codenames_oversight_rloo_negligent_biased
 #SBATCH --open-mode=append
 #SBATCH --output=job_outputs/%x/%A_%02a.out
 #SBATCH --error=job_outputs/%x/%A_%02a.err

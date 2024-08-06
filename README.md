@@ -1,4 +1,4 @@
-# CodeNames Debate
+# CodeNames Oversight
 
 [CodeNames](<https://en.wikipedia.org/wiki/Codenames_(board_game)>) is a party card game where players need to find creative word associations. It has some properties that make it compelling as a testbed for scalable oversight experiments:
 

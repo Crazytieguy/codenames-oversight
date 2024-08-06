@@ -21,5 +21,5 @@ for folder in models/rloo_negligent_biased/*; do
   >&2 echo "bias_factor: $bf"
   >&2 echo "adversarial_alpha: $aa"
 
-  python -m codenames_debate.evaluate_model --adversarial-alpha $aa $folder negligent-biased $nw $bnw $bnnw $bf < data/eval-games-small.jsonl >> results/rloo-negligent-biased.jsonl
+  python -m codenames_oversight.evaluate_model --adversarial-alpha $aa $folder negligent-biased $nw $bnw $bnnw $bf < data/eval-games-small.jsonl >> results/rloo-negligent-biased.jsonl
 done

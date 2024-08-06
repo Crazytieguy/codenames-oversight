@@ -22,4 +22,4 @@ adversarial_alpha=${adversarial_alpha[$array_task_id]}
 >&2 echo "bias_factor: $bias_factor"
 >&2 echo "adversarial_alpha: $adversarial_alpha"
 
-python -m codenames_debate.ppo --adversarial-alpha $adversarial_alpha data/ppo-small-dataset.jsonl models/llama-7b-random-cluer-small-r-256-merged models/ppo_negligent_biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
+python -m codenames_oversight.ppo --adversarial-alpha $adversarial_alpha data/ppo-small-dataset.jsonl models/llama-7b-random-cluer-small-r-256-merged models/ppo_negligent_biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor

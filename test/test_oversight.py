@@ -1,5 +1,5 @@
-from codenames_debate.models import Clue, ClueCritiques, Evaluation, Game
-from codenames_debate.oversight import (
+from codenames_oversight.models import Clue, ClueCritiques, Evaluation, Game
+from codenames_oversight.oversight import (
     RobustOverSeer,
 )
 
