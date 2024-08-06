@@ -9,7 +9,7 @@
 
 This project aims to expand on the theory of predicting whether a scalable oversight technique will robustly succeed for some problem domain and overseer, and then test out the theory with many small experiments.
 
-For more detail, see [the project doc](https://docs.google.com/document/d/1t9sBDuqqvJ4FetyBXfnLMVyoYAL2tDbddS-kJAHifqs/edit?usp=sharing).
+For more detail, see [the paper draft](https://docs.google.com/document/d/13msM3ceTPjKPiX4FWnwlaIfiq34WxGqfJXFOEDUfjv4/edit?usp=sharing) (targetted at AAAI 2025).
 
 ## Relevant background
 * [the original Debate paper](https://arxiv.org/abs/1805.00899)
