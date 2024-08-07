@@ -19,7 +19,6 @@ from .models import (
     Clue,
     ClueCritiques,
     Game,
-    generate_game,
 )
 from .oversight import (
     NeglectLastNOverSeer,
@@ -36,8 +35,6 @@ app = typer.Typer(pretty_exceptions_show_locals=False)
 
 MODEL_NAME_OR_PATH: str
 BASE_MODEL: str
-RANDOM_GAMES: Optional[int]
-RANDOM_GAME_SIZE: int
 CLUES_PER_GAME: int
 BATCH_SIZE: int
 TEMPERATURE: Optional[float]
@@ -48,8 +45,6 @@ ADVERSARIAL_ALPHA: float
 def set_params(
     model_name_or_path: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    random_games: Optional[int] = None,
-    random_game_size: int = 8,
     clues_per_game: int = 1,
     batch_size: int = 32,
     temperature: Optional[float] = None,
@@ -65,8 +60,6 @@ def set_params(
     global ADVERSARIAL_ALPHA
     MODEL_NAME_OR_PATH = model_name_or_path
     BASE_MODEL = base_model
-    RANDOM_GAMES = random_games
-    RANDOM_GAME_SIZE = random_game_size
     CLUES_PER_GAME = clues_per_game
     BATCH_SIZE = batch_size
     TEMPERATURE = temperature
@@ -104,10 +97,7 @@ def main(overseer: OverSeer):
     rng = torch.Generator(device="cuda")
     rng.manual_seed(42)
 
-    if RANDOM_GAMES is not None:
-        games = [generate_game(RANDOM_GAME_SIZE) for _ in range(RANDOM_GAMES)]
-    else:
-        games = [Game.model_validate_json(line) for line in sys.stdin]
+    games = [Game.model_validate_json(line) for line in sys.stdin]
 
     for batch in tqdm(
         partition_all(BATCH_SIZE, games),

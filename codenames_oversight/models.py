@@ -104,11 +104,9 @@ class Evaluation(BaseModel):
         return picks
 
 
-def generate_game(num_words: int = 20) -> Game:
-    words = random.sample(GAME_WORDS, num_words)
-    good_words, bad_words = random.sample(
-        [words[: num_words // 2], words[num_words // 2 :]], 2
-    )
+def generate_game(n_good_words: int, n_bad_words: int) -> Game:
+    words = random.sample(GAME_WORDS, n_good_words + n_bad_words)
+    good_words, bad_words = words[:n_good_words], words[n_good_words:]
     return Game(
         good_words=good_words,
         bad_words=bad_words,

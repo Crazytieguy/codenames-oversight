@@ -12,9 +12,8 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TrainingArguments,
 )
-from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
+from trl import DataCollatorForCompletionOnlyLM, SFTConfig, SFTTrainer
 
 from .models import SFTSample
 
@@ -50,17 +49,6 @@ def main(
         torch_dtype=torch.bfloat16,
     )
 
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        per_device_train_batch_size=8,  # critical for memory usage
-        gradient_accumulation_steps=16,
-        learning_rate=2e-4,
-        logging_steps=1,
-        num_train_epochs=1,
-        max_steps=-1,
-        report_to=["tensorboard"],
-    )
-
     peft_config = LoraConfig(
         r=256,
         lora_alpha=128,
@@ -88,15 +76,26 @@ def main(
         response_template_ids, tokenizer=tokenizer
     )
 
+    training_args = SFTConfig(
+        output_dir=output_dir,
+        per_device_train_batch_size=16,  # critical for memory usage
+        gradient_accumulation_steps=8,
+        learning_rate=2e-4,
+        logging_steps=1,
+        num_train_epochs=1,
+        max_steps=-1,
+        report_to=["tensorboard"],
+        max_seq_length=96,
+        dataset_text_field="text",
+    )
+
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
         data_collator=data_collator,
         args=training_args,
         train_dataset=dataset,  # type: ignore
-        dataset_text_field="text",
         peft_config=peft_config,
-        max_seq_length=256,
     )
 
     trainer.train()  # type: ignore

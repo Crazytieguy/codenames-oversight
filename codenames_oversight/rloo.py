@@ -57,7 +57,7 @@ def set_params(
     output_dir: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
     learning_rate: float = 2e-5,
-    batch_size: int = 256,
+    batch_size: int = 128,
     kl_coeff: float = 0.06,
     ppo_epochs: int = 4,
     adversarial_alpha: float = 0.0,
@@ -107,10 +107,11 @@ def main(overseer: OverSeer):
     tokenizer.pad_token = tokenizer.eos_token
 
     dataset = load_game_dataset(DATASET_FILE, tokenizer)
-    mini_batch_size = 32
+    mini_batch_size = 16
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
+        local_rollout_forward_batch_size=mini_batch_size,
         num_train_epochs=1,
         num_ppo_epochs=PPO_EPOCHS,
         gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,
@@ -123,9 +124,8 @@ def main(overseer: OverSeer):
         # TODO: this is the default value and I don't know why it's not 1.0.
         temperature=1.0,
         stop_token="eos",
-        # Technically doesn't fit the longest possible response,
-        # but in that case the last targets are just cut off and it's fine
-        response_length=32,
+        # Technically doesn't fit the longest possible response
+        response_length=48,
         num_sample_generations=0,
     )
     trainer = RLOOTrainer(
