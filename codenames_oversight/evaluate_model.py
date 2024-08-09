@@ -67,7 +67,6 @@ def set_params(
 
 
 def main(overseer: OverSeer):
-    "Give some clues"
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
     try:

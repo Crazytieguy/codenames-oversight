@@ -85,7 +85,7 @@ def main(
         num_train_epochs=1,
         max_steps=-1,
         report_to=["tensorboard"],
-        max_seq_length=96,
+        max_seq_length=128,
         dataset_text_field="text",
     )
 

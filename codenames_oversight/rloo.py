@@ -48,6 +48,7 @@ BATCH_SIZE: int
 KL_COEFF: float
 PPO_EPOCHS: int
 ADVERSARIAL_ALPHA: float
+RLOO_K: int
 
 
 @app.callback()
@@ -56,11 +57,12 @@ def set_params(
     model_dir: str,
     output_dir: str,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    learning_rate: float = 2e-5,
-    batch_size: int = 128,
+    learning_rate: float = 1.5e-5,
+    batch_size: int = 256,
     kl_coeff: float = 0.06,
     ppo_epochs: int = 4,
     adversarial_alpha: float = 0.0,
+    rloo_k: int = 4,
 ):
     global DATASET_FILE
     global MODEL_DIR
@@ -71,6 +73,7 @@ def set_params(
     global KL_COEFF
     global PPO_EPOCHS
     global ADVERSARIAL_ALPHA
+    global RLOO_K
     DATASET_FILE = dataset_file
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
@@ -80,6 +83,7 @@ def set_params(
     KL_COEFF = kl_coeff
     PPO_EPOCHS = ppo_epochs
     ADVERSARIAL_ALPHA = adversarial_alpha
+    RLOO_K = rloo_k
 
 
 def main(overseer: OverSeer):
@@ -107,7 +111,7 @@ def main(overseer: OverSeer):
     tokenizer.pad_token = tokenizer.eos_token
 
     dataset = load_game_dataset(DATASET_FILE, tokenizer)
-    mini_batch_size = 16
+    mini_batch_size = 32
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
@@ -116,17 +120,17 @@ def main(overseer: OverSeer):
         num_ppo_epochs=PPO_EPOCHS,
         gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,
         kl_coef=KL_COEFF,
-        rloo_k=4,
+        rloo_k=RLOO_K,
         learning_rate=LEARNING_RATE,
         save_steps=16,
         logging_steps=1,
         report_to=["tensorboard"],
-        # TODO: this is the default value and I don't know why it's not 1.0.
         temperature=1.0,
         stop_token="eos",
         # Technically doesn't fit the longest possible response
-        response_length=48,
+        response_length=42,
         num_sample_generations=0,
+        lr_scheduler_type="constant",
     )
     trainer = RLOOTrainer(
         config=config,
@@ -148,7 +152,11 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
         queries = []
         responses = []
         for query_response in query_responses:
-            query, response = query_response.split("\n\n", maxsplit=1)
+            try:
+                query, response = query_response.split("\n\n", maxsplit=1)
+            except ValueError:
+                logger.error(f"Error splitting query and response: {query_response}")
+                raise
             queries.append(query)
             responses.append(response)
 
@@ -189,7 +197,7 @@ def get_reward_function(overseer: OverSeer, tokenizer: PreTrainedTokenizer):
                 - ADVERSARIAL_ALPHA * o.ground_truth_score
                 if o is not None
                 # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
-                else -1.0
+                else -2.0
                 for g, o in zip(games, oversights)
             ]
         )

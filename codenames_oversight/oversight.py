@@ -458,7 +458,7 @@ def choose_best_clue_critique(
     }
 
 
-EXECUTOR = ThreadPoolExecutor(max_workers=16)
+EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
 
 def get_all_evals(game: Game, clue_words: list[str] | int) -> list[Evaluation]:

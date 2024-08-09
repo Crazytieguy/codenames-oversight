@@ -13,15 +13,15 @@ class Game(BaseModel):
 
     def __str__(self) -> str:
         return f"""\
-Good words: {', '.join(self.good_words)}
-Bad words: {', '.join(self.bad_words)}"""
+Good words: {' '.join(self.good_words)}
+Bad words: {' '.join(self.bad_words)}"""
 
     @staticmethod
     def parse(repr: str) -> "Game":
         good_words, bad_words = repr.strip().splitlines()
         return Game(
-            good_words=good_words.removeprefix("Good words: ").split(", "),
-            bad_words=bad_words.removeprefix("Bad words: ").split(", "),
+            good_words=good_words.removeprefix("Good words: ").split(),
+            bad_words=bad_words.removeprefix("Bad words: ").split(),
         )
 
 
@@ -32,7 +32,7 @@ class Clue(BaseModel):
     def __str__(self) -> str:
         return f"""\
 Clue: {self.clue}
-Targets: {', '.join(self.targets)}"""
+Targets: {' '.join(self.targets)}"""
 
     @staticmethod
     def parse_response(response: str) -> "Clue":
@@ -43,9 +43,7 @@ Targets: {', '.join(self.targets)}"""
         if not targets_line.startswith("Targets:"):
             raise ValueError(f"Expected 'Targets:', got {targets_line}")
         clue = clue_line[len("Clue: ") :]
-        targets = [
-            t for t in targets_line.removeprefix("Targets:").strip().split(", ") if t
-        ]
+        targets = [t for t in targets_line.removeprefix("Targets:").split() if t]
         return Clue(clue=clue, targets=targets)
 
 

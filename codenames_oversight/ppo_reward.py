@@ -83,7 +83,9 @@ def approximate_calibrate_p(
         for o, g in zip(oversights, games)
         if o is not None
     )
-    return sum_p_t / count_valid_oversights
+    cp = sum_p_t / count_valid_oversights
+    # avoid division by zero errors and extreme values
+    return max(cp, 1e-3)
 
 
 def log_odds(p: float) -> float:

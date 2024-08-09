@@ -4,9 +4,9 @@ export $(cat .env)
 
 array_task_id=$1
 
-neglect_words=(           0    2    0    0    2    0    2    0    0    2   )
-bias_neglected_words=(    0    0    0    0    2    0    0    0    0    2   )
-bias_non_neglected_words=(0    0    2    2    2    0    0    2    2    2   )
+neglect_words=(           0    2    0    0    1    0    2    0    0    1  )
+bias_neglected_words=(    0    0    0    0    1    0    0    0    0    1  )
+bias_non_neglected_words=(0    0    2    1    1    0    0    2    1    1  )
 bias_factor=(             1.00 1.00 0.8  1.2  1.2  1.00 1.00 0.8  1.2  1.2)
 adversarial_alpha=(       0.0  0.0  0.0  0.0  0.0  0.2  0.2  0.2  0.2  0.2)
 
@@ -22,4 +22,4 @@ adversarial_alpha=${adversarial_alpha[$array_task_id]}
 >&2 echo "bias_factor: $bias_factor"
 >&2 echo "adversarial_alpha: $adversarial_alpha"
 
-python -m codenames_oversight.rloo --adversarial-alpha $adversarial_alpha data/rloo-dataset.jsonl models/base-cluer-merged models/rloo-negligent-biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
+python -m codenames_oversight.rloo --adversarial-alpha $adversarial_alpha data/rloo-small-dataset.jsonl models/base-cluer-merged models/rloo-small-negligent-biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
