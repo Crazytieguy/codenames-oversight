@@ -22,4 +22,6 @@ adversarial_alpha=${adversarial_alpha[$array_task_id]}
 >&2 echo "bias_factor: $bias_factor"
 >&2 echo "adversarial_alpha: $adversarial_alpha"
 
-python -m codenames_oversight.rloo --adversarial-alpha $adversarial_alpha data/rloo-small-dataset.jsonl models/base-cluer-peft models/rloo-small-negligent-biased/nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
+model_out_dir=nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha
+
+python -m codenames_oversight.rloo --critique-model-dir models/base-critiquer-peft --critique-output-dir models/rloo-small-negligent-biased-judge/critiquer/$model_out_dir --adversarial-alpha $adversarial_alpha data/rloo-small-dataset.jsonl models/base-cluer-peft models/rloo-small-negligent-biased-judge/cluer/$model_out_dir negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor

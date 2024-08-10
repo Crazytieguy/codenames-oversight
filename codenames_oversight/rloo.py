@@ -192,9 +192,8 @@ def main(overseer: OverSeer):
         reward_function=get_reward_function(
             overseer,
             tokenizer,
-            None
-            if critique_generator is None or critique_trainer is None
-            else (critique_generator, critique_trainer),
+            critique_generator,
+            critique_trainer,
         ),
         train_dataset=dataset,
     )
@@ -207,7 +206,8 @@ def main(overseer: OverSeer):
 def get_reward_function(
     overseer: OverSeer,
     tokenizer: PreTrainedTokenizer,
-    critique_stuff: tuple[SequenceGenerator, IterativeSFTTrainer] | None,
+    critique_generator: SequenceGenerator | None,
+    critique_trainer: IterativeSFTTrainer | None,
 ):
     def reward_function(postprocessed_query_responses: torch.Tensor) -> torch.Tensor:
         query_responses = tokenizer.batch_decode(
@@ -226,8 +226,7 @@ def get_reward_function(
 
         games = [Game.parse(query) for query in queries]
         clues = [safe(Clue.parse_response, response) for response in responses]
-        if critique_stuff is not None:
-            critique_generator, _ = critique_stuff
+        if critique_generator is not None:
             critique_prompts = [
                 f"{query_response.strip()}\n\nCritique:"
                 for query_response in query_responses
@@ -252,7 +251,9 @@ def get_reward_function(
                         )
                         is not None
                     ]
-                    for outputs in critique_outputs  # type: ignore
+                    if clue is not None and clue.targets
+                    else []
+                    for clue, outputs in zip(clues, critique_outputs)  # type: ignore
                 ]
         else:
             critiques = [[] for _ in games]
@@ -271,8 +272,7 @@ def get_reward_function(
             overseer.oversee(e) if e is not None else None for e in evaluations
         ]
 
-        if critique_stuff is not None:
-            _, critique_trainer = critique_stuff
+        if critique_trainer is not None:
             texts = [
                 f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}"
                 for g, o in zip(games, oversights)

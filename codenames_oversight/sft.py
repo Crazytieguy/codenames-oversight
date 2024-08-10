@@ -38,6 +38,8 @@ def main(
         if model_role == ModelRole.CLUE_GIVER
         else format_critiquer_prompt
     )
+    if model_role == ModelRole.CRITIQUER:
+        dataset = dataset.filter(lambda sample: sample["critique"] is not None)
     dataset = dataset.map(format_prompt, batched=False)
 
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
