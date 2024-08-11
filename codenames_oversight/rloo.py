@@ -8,10 +8,9 @@ import torch
 import typer
 from datasets import Dataset
 from outlines.generate import text  # type: ignore
-from outlines.generate.api import SequenceGenerator
 from outlines.models.transformers import Transformers
 from outlines.samplers import multinomial
-from peft import PeftModelForCausalLM  # type: ignore
+from peft import PeftModel, PeftModelForCausalLM  # type: ignore
 from pydantic import NonNegativeFloat, NonNegativeInt
 from toolz.itertoolz import partition_all
 from transformers import (
@@ -21,10 +20,11 @@ from transformers import (
     PreTrainedTokenizer,
     TrainingArguments,
 )
-from trl import DataCollatorForCompletionOnlyLM, IterativeSFTTrainer, set_seed
+from trl import DataCollatorForCompletionOnlyLM, set_seed
 from trl.trainer.rloo_config import RLOOConfig
 
 from .evaluate_clue import evaluate_clue
+from .iterative_sft_trainer import IterativeSFTTrainer
 from .models import Clue, ClueCritiques, Critique, Game
 from .oversight import (
     NeglectLastNOverSeer,
@@ -51,7 +51,6 @@ DATASET_FILE: str
 MODEL_DIR: str
 OUTPUT_DIR: str
 CRITIQUE_MODEL_DIR: Optional[str]
-CRITIQUE_OUTPUT_DIR: Optional[str]
 BASE_MODEL: str
 LEARNING_RATE: float
 BATCH_SIZE: int
@@ -67,7 +66,6 @@ def set_params(
     model_dir: str,
     output_dir: str,
     critique_model_dir: Optional[str] = None,
-    critique_output_dir: Optional[str] = None,
     base_model: str = "meta-llama/Llama-2-7b-hf",
     learning_rate: float = 1.5e-5,
     batch_size: int = 256,
@@ -80,7 +78,6 @@ def set_params(
     global MODEL_DIR
     global OUTPUT_DIR
     global CRITIQUE_MODEL_DIR
-    global CRITIQUE_OUTPUT_DIR
     global BASE_MODEL
     global LEARNING_RATE
     global BATCH_SIZE
@@ -92,10 +89,7 @@ def set_params(
     MODEL_DIR = model_dir
     OUTPUT_DIR = output_dir
     BASE_MODEL = base_model
-    if critique_model_dir is not None:
-        assert critique_output_dir is not None
     CRITIQUE_MODEL_DIR = critique_model_dir
-    CRITIQUE_OUTPUT_DIR = critique_output_dir
     LEARNING_RATE = learning_rate
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
@@ -118,18 +112,13 @@ def main(overseer: OverSeer):
         device_map="auto",
         torch_dtype=torch.bfloat16,
     )
-    ref_model = PeftModelForCausalLM.from_pretrained(
-        base_model, MODEL_DIR, is_trainable=False
-    )
     model = PeftModelForCausalLM.from_pretrained(
-        base_model, MODEL_DIR, is_trainable=True
+        base_model, MODEL_DIR, is_trainable=False, adapter_name="ref"
     )
+    model.load_adapter(MODEL_DIR, "train", is_trainable=True)
 
     if CRITIQUE_MODEL_DIR is not None:
-        assert CRITIQUE_OUTPUT_DIR is not None
-        critique_model = PeftModelForCausalLM.from_pretrained(
-            base_model, CRITIQUE_MODEL_DIR, is_trainable=True
-        )
+        model.load_adapter(CRITIQUE_MODEL_DIR, "critique", is_trainable=True)
         response_template = "\n\nCritique:"
         # skip '<s>' and '▁'
         response_template_ids = tokenizer.encode(
@@ -139,7 +128,7 @@ def main(overseer: OverSeer):
             response_template_ids, tokenizer=tokenizer
         )
         critique_training_args = TrainingArguments(
-            output_dir=CRITIQUE_OUTPUT_DIR,
+            output_dir=OUTPUT_DIR,
             per_device_train_batch_size=16,  # critical for memory usage
             gradient_accumulation_steps=2,
             learning_rate=2e-4,
@@ -147,19 +136,15 @@ def main(overseer: OverSeer):
             num_train_epochs=1,
             max_steps=-1,
             report_to=["tensorboard"],
+            eval_steps=None,
         )
         critique_trainer = IterativeSFTTrainer(
-            model=critique_model,  # type: ignore
+            model=model,
             tokenizer=tokenizer,
             data_collator=data_collator,
             args=critique_training_args,
         )
-        outlines_model = Transformers(critique_model, tokenizer)  # type: ignore
-        # TODO: don't hard code these
-        critique_sampler = multinomial(2, temperature=1.0)
-        critique_generator = text(outlines_model, critique_sampler)
     else:
-        critique_generator = None
         critique_trainer = None
 
     dataset = load_game_dataset(DATASET_FILE, tokenizer)
@@ -187,29 +172,37 @@ def main(overseer: OverSeer):
     trainer = RLOOTrainer(
         config=config,
         tokenizer=tokenizer,
-        policy=model,
-        ref_policy=ref_model,
+        model=model,
+        policy_adapter="train",
+        ref_policy_adapter="ref",
         reward_function=get_reward_function(
             overseer,
             tokenizer,
-            critique_generator,
+            model,
             critique_trainer,
         ),
         train_dataset=dataset,
     )
     trainer.train()
-    trainer.save_model(config.output_dir)
-    if critique_trainer is not None:
-        critique_trainer.save_model(CRITIQUE_OUTPUT_DIR)
+    model.save_pretrained(OUTPUT_DIR)  # this should save all adapters
 
 
 def get_reward_function(
     overseer: OverSeer,
     tokenizer: PreTrainedTokenizer,
-    critique_generator: SequenceGenerator | None,
+    model: PeftModel,
     critique_trainer: IterativeSFTTrainer | None,
 ):
+    if CRITIQUE_MODEL_DIR is not None:
+        outlines_model = Transformers(model, tokenizer)  # type: ignore
+        # TODO: don't hard code these
+        critique_sampler = multinomial(2, temperature=1.0)
+        critique_generator = text(outlines_model, critique_sampler)
+    else:
+        critique_generator = None
+
     def reward_function(postprocessed_query_responses: torch.Tensor) -> torch.Tensor:
+        current_adapter = model.active_adapter
         query_responses = tokenizer.batch_decode(
             postprocessed_query_responses, skip_special_tokens=True
         )
@@ -227,34 +220,34 @@ def get_reward_function(
         games = [Game.parse(query) for query in queries]
         clues = [safe(Clue.parse_response, response) for response in responses]
         if critique_generator is not None:
+            model.set_adapter("critique")
             critique_prompts = [
                 f"{query_response.strip()}\n\nCritique:"
                 for query_response in query_responses
             ]
-            with torch.no_grad():
-                # TODO: make this work if generating only 1 critique per clue
-                critique_outputs = sum(
-                    (
-                        critique_generator(prompts, max_tokens=24, stop_at="\n")
-                        for prompts in partition_all(32, critique_prompts)
-                    ),  # type: ignore
-                    [],
-                )  # type: ignore
-                critiques = [
-                    [
-                        critique
-                        for output in outputs
-                        if (
-                            critique := safe(
-                                Critique.parse_response, f"Critique: {output.strip()}"
-                            )
+            # TODO: make this work if generating only 1 critique per clue
+            critique_outputs = sum(
+                (
+                    critique_generator(prompts, max_tokens=24, stop_at="\n")
+                    for prompts in partition_all(32, critique_prompts)
+                ),  # type: ignore
+                [],
+            )  # type: ignore
+            critiques = [
+                [
+                    critique
+                    for output in outputs
+                    if (
+                        critique := safe(
+                            Critique.parse_response, f"Critique: {output.strip()}"
                         )
-                        is not None
-                    ]
-                    if clue is not None and clue.targets
-                    else []
-                    for clue, outputs in zip(clues, critique_outputs)  # type: ignore
+                    )
+                    is not None
                 ]
+                if clue is not None and clue.targets
+                else []
+                for clue, outputs in zip(clues, critique_outputs)  # type: ignore
+            ]
         else:
             critiques = [[] for _ in games]
 
@@ -273,8 +266,9 @@ def get_reward_function(
         ]
 
         if critique_trainer is not None:
+            model.set_adapter("critique")  # just in case
             texts = [
-                f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}"
+                f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}\n"
                 for g, o in zip(games, oversights)
                 if o is not None and o.deciding_critique is not None
             ]
@@ -323,6 +317,7 @@ def get_reward_function(
                 )
                 print(p_set.model_dump_json())
 
+        model.set_adapter(current_adapter)
         return rewards
 
     return reward_function

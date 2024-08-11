@@ -11,11 +11,11 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import broadcast, gather_object
 from datasets import Dataset
+from peft import PeftModel  # type: ignore
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import (
@@ -49,8 +49,9 @@ class RLOOTrainer(Trainer):
         self,
         config: RLOOConfig,
         tokenizer: PreTrainedTokenizer,
-        policy: nn.Module,
-        ref_policy: nn.Module,
+        model: PeftModel,
+        policy_adapter: str,
+        ref_policy_adapter: str,
         # Takes in postprocessed_query_response and returnes scores
         reward_function: Callable[[torch.Tensor], torch.Tensor],
         train_dataset: Dataset,
@@ -65,14 +66,15 @@ class RLOOTrainer(Trainer):
         self.args = config
         args = config
         self.tokenizer = tokenizer
-        self.policy = policy
+        self.model = model
 
-        self.policy.generation_config.eos_token_id = (
+        self.model.generation_config.eos_token_id = (
             None  # disable `pad_token_id` and `eos_token_id` because we just want to
         )
-        self.policy.generation_config.pad_token_id = None  # generate tokens without truncation / padding
+        self.model.generation_config.pad_token_id = None  # generate tokens without truncation / padding
 
-        self.ref_policy = ref_policy
+        self.policy_adapter = policy_adapter
+        self.ref_policy_adapter = ref_policy_adapter
         self.reward_function = reward_function
         self.train_dataset = train_dataset
         self.train_dataset_len = len(train_dataset)
@@ -120,11 +122,9 @@ class RLOOTrainer(Trainer):
         #########
         # setup model, optimizer, and others
         #########
-        for module in [policy, ref_policy]:
-            disable_dropout_in_model(module)
+        disable_dropout_in_model(model)
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
-        self.model = policy
         self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
 
         #########
@@ -180,9 +180,6 @@ class RLOOTrainer(Trainer):
             self.reward_model = prepare_deepspeed(
                 self.reward_model, args.per_device_train_batch_size, args.bf16, args.fp16
             )
-            self.ref_policy = prepare_deepspeed(
-                self.ref_policy, args.per_device_train_batch_size, args.bf16, args.fp16
-            )
             self.deepspeed = self.model
         else:
             pass
@@ -203,7 +200,8 @@ class RLOOTrainer(Trainer):
         accelerator = self.accelerator
         optimizer = self.optimizer
         model = self.model
-        ref_policy = self.ref_policy
+        policy_adapter = self.policy_adapter
+        ref_policy_adapter = self.ref_policy_adapter
         reward_function = self.reward_function
         tokenizer = self.tokenizer
         dataloader = self.dataloader
@@ -252,6 +250,7 @@ class RLOOTrainer(Trainer):
                 sequence_lengths = []
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
                     for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
+                        model.set_adapter(policy_adapter)
                         query = queries[i : i + args.local_rollout_forward_batch_size]
                         query_response, logits = generate(
                             unwrapped_model,
@@ -267,7 +266,8 @@ class RLOOTrainer(Trainer):
                         del logits, all_logprob
                         torch.cuda.empty_cache()
 
-                        ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
+                        model.set_adapter(ref_policy_adapter)
+                        ref_output = forward(model, query_response, tokenizer.pad_token_id)
                         ref_logits = ref_output.logits[:, context_length - 1 : -1]
                         ref_logits /= args.temperature + 1e-7
                         ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
@@ -298,7 +298,11 @@ class RLOOTrainer(Trainer):
                 ref_logprobs = torch.cat(ref_logprobs, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 postprocessed_query_responses = torch.cat((queries, postprocessed_responses), 1)
-                scores = reward_function(postprocessed_query_responses).to(self.accelerator.device)
+
+            # We need to run the reward function without no_grad because it might be training the critiquer
+            scores = reward_function(postprocessed_query_responses).to(self.accelerator.device)
+
+            with torch.no_grad():
                 del (logprob, ref_logprob)
                 torch.cuda.empty_cache()
                 gc.collect()
@@ -330,6 +334,7 @@ class RLOOTrainer(Trainer):
                 torch.cuda.empty_cache()
 
             # Do multiple epochs of PPO training, with a fresh random shuffle in each epoch
+            model.set_adapter(policy_adapter)
             for ppo_epoch_idx in range(args.num_ppo_epochs):
                 b_inds = np.random.permutation(args.local_batch_size)
                 minibatch_idx = 0
@@ -345,7 +350,6 @@ class RLOOTrainer(Trainer):
                             mb_responses = responses[micro_batch_inds]
                             mb_query_responses = query_responses[micro_batch_inds]
                             mb_logprobs = logprobs[micro_batch_inds]
-
                             output = forward(model, mb_query_responses, tokenizer.pad_token_id)
                             logits = output.logits[:, context_length - 1 : -1]
                             logits /= args.temperature + 1e-7
@@ -442,6 +446,7 @@ class RLOOTrainer(Trainer):
             query = batch["input_ids"]
             with torch.no_grad():
                 context_length = query.shape[1]
+                self.model.set_adapter(self.policy_adapter)
                 with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
                     query_response, _ = generate(
                         unwrapped_model,

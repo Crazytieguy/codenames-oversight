@@ -5,6 +5,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from datasets import Dataset
+from peft import PeftModel  # type: ignore
 from torch.utils.data import DataLoader
 from transformers import (
     DataCollator,
@@ -18,9 +19,6 @@ from transformers import (
 from transformers.trainer_utils import EvalLoopOutput
 from trl.core import PPODecorators
 from trl.import_utils import is_peft_available
-
-if is_peft_available():
-    from peft import PeftModel
 
 
 class IterativeSFTTrainer(Trainer):
@@ -47,7 +45,7 @@ class IterativeSFTTrainer(Trainer):
 
     def __init__(
         self,
-        model: Optional[PreTrainedModel] = None,
+        model: Optional[Union[PreTrainedModel, PeftModel]] = None,
         args: Optional[TrainingArguments] = None,
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
@@ -69,7 +67,7 @@ class IterativeSFTTrainer(Trainer):
             raise ValueError(
                 f"tokenizer must be a PreTrainedTokenizerBase like a PreTrainedTokenizer or a PreTrainedTokenizerFast, got {type(tokenizer)}"
             )
-        if not isinstance(model, PreTrainedModel):
+        if not isinstance(model, (PreTrainedModel, PeftModel)):
             raise ValueError(f"model must be a PreTrainedModel, got {type(model)}")
         if not model.can_generate():
             warnings.warn(
