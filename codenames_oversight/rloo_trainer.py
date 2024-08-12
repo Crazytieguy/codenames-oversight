@@ -3,6 +3,7 @@
 # fmt: off
 
 import gc
+import logging
 import os
 import time
 from collections import defaultdict
@@ -42,6 +43,8 @@ from trl.trainer.utils import (
     truncate_response,
 )
 
+logger = logging.getLogger(__name__)
+
 INVALID_LOGPROB = 1.0
 
 class RLOOTrainer(Trainer):
@@ -63,6 +66,8 @@ class RLOOTrainer(Trainer):
         # model_init: Optional[Callable[[torch.nn.Module], None]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
     ) -> None:
+        model.set_adapter(policy_adapter)
+
         self.args = config
         args = config
         self.tokenizer = tokenizer
@@ -301,6 +306,7 @@ class RLOOTrainer(Trainer):
 
             # We need to run the reward function without no_grad because it might be training the critiquer
             scores = reward_function(postprocessed_query_responses).to(self.accelerator.device)
+            scores.requires_grad = False
 
             with torch.no_grad():
                 del (logprob, ref_logprob)
@@ -368,6 +374,7 @@ class RLOOTrainer(Trainer):
                             pg_loss_max = torch.max(pg_losses, pg_losses2)
                             pg_loss = pg_loss_max.mean()
                             loss = pg_loss
+                            logger.debug(f"Loss: {loss.item()}")
                             accelerator.backward(loss)
                             optimizer.step()
                             optimizer.zero_grad()

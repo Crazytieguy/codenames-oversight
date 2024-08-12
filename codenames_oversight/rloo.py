@@ -42,7 +42,7 @@ from .ppo_reward import (
 )
 from .rloo_trainer import RLOOTrainer
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -142,6 +142,8 @@ def main(overseer: OverSeer):
             # This is an upper bound. Doesn't really matter since the LR is constant
             max_steps=len(dataset) * RLOO_K * 2,
         )
+        # Needed for the optimizer to be initialized correctly
+        model.set_adapter("critiquer")
         critique_trainer = IterativeSFTTrainer(
             model=model,
             tokenizer=tokenizer,
@@ -220,7 +222,7 @@ def get_reward_function(
 
         games = [Game.parse(query) for query in queries]
 
-        logger.info("Parsing Clues")
+        logger.debug("Parsing Clues")
         clues = [safe(Clue.parse_response, response) for response in responses]
 
         if critique_generator is not None:
@@ -235,7 +237,7 @@ def get_reward_function(
                 )
             ]
             # TODO: make this work if generating only 1 critique per clue
-            logger.info("Generating Critiques")
+            logger.debug("Generating Critiques")
             critique_outputs = sum(
                 (
                     critique_generator(prompts, max_tokens=24, stop_at="\n")
@@ -245,7 +247,7 @@ def get_reward_function(
             )
             critique_outputs = list(partition_all(critiques_per_clue, critique_outputs))
 
-            logger.info("Parsing Critiques")
+            logger.debug("Parsing Critiques")
             critiques = [
                 [
                     critique
@@ -265,7 +267,7 @@ def get_reward_function(
         else:
             critiques = [[] for _ in games]
 
-        logger.info("Evaluating and Overseeing")
+        logger.debug("Evaluating and Overseeing")
         evaluations = [
             safe(evaluate_clue, game, ClueCritiques(clue=clue, critiques=critiques))
             if clue is not None
@@ -315,7 +317,7 @@ def get_reward_function(
         logger.info(f"Reward counts: {{{reward_counts_str}}}")
 
         if critique_trainer is not None:
-            logger.info("Training critiquer")
+            logger.debug("Training critiquer")
             texts = [
                 f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}\n"
                 for g, o in zip(games, oversights)
