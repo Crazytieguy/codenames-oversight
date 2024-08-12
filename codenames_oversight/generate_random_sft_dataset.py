@@ -7,7 +7,7 @@ from .models import CLUE_WORDS, Clue, Critique, Game, SFTSample, generate_game
 CLUE_WORDS_INDEXABLE = list(CLUE_WORDS)
 
 
-def main(dataset_size: int = 8192, n_good_words: int = 6, n_bad_words: int = 4):
+def main(dataset_size: int = 8192, n_good_words: int = 4, n_bad_words: int = 4):
     random.shuffle(CLUE_WORDS_INDEXABLE)
     for _ in range(dataset_size):
         game = generate_game(n_good_words, n_bad_words)

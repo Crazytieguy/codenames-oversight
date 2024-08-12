@@ -1,6 +1,7 @@
 import logging
 from collections import Counter
 from collections.abc import Callable
+from itertools import repeat
 from pathlib import Path
 from typing import Optional
 
@@ -9,7 +10,6 @@ import typer
 from datasets import Dataset
 from outlines.generate import text  # type: ignore
 from outlines.models.transformers import Transformers
-from outlines.samplers import multinomial
 from peft import PeftModel, PeftModelForCausalLM  # type: ignore
 from pydantic import NonNegativeFloat, NonNegativeInt
 from toolz.itertoolz import partition_all
@@ -106,6 +106,8 @@ def main(overseer: OverSeer):
     )  # type: ignore
     tokenizer.pad_token = tokenizer.eos_token
 
+    dataset = load_game_dataset(DATASET_FILE, tokenizer)
+
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
         quantization_config=quantization_config,
@@ -115,10 +117,10 @@ def main(overseer: OverSeer):
     model = PeftModelForCausalLM.from_pretrained(
         base_model, MODEL_DIR, is_trainable=False, adapter_name="ref"
     )
-    model.load_adapter(MODEL_DIR, "train", is_trainable=True)
+    model.load_adapter(MODEL_DIR, "cluer", is_trainable=True)
 
     if CRITIQUE_MODEL_DIR is not None:
-        model.load_adapter(CRITIQUE_MODEL_DIR, "critique", is_trainable=True)
+        model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer", is_trainable=True)
         response_template = "\n\nCritique:"
         # skip '<s>' and '▁'
         response_template_ids = tokenizer.encode(
@@ -129,14 +131,16 @@ def main(overseer: OverSeer):
         )
         critique_training_args = TrainingArguments(
             output_dir=OUTPUT_DIR,
-            per_device_train_batch_size=16,  # critical for memory usage
+            per_device_train_batch_size=32,  # critical for memory usage
             gradient_accumulation_steps=2,
-            learning_rate=2e-4,
+            learning_rate=1e-4,
             logging_steps=1,
             num_train_epochs=1,
-            max_steps=-1,
             report_to=["tensorboard"],
             eval_steps=None,
+            lr_scheduler_type="constant",
+            # This is an upper bound. Doesn't really matter since the LR is constant
+            max_steps=len(dataset) * RLOO_K * 2,
         )
         critique_trainer = IterativeSFTTrainer(
             model=model,
@@ -147,7 +151,6 @@ def main(overseer: OverSeer):
     else:
         critique_trainer = None
 
-    dataset = load_game_dataset(DATASET_FILE, tokenizer)
     mini_batch_size = 32
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
@@ -173,7 +176,7 @@ def main(overseer: OverSeer):
         config=config,
         tokenizer=tokenizer,
         model=model,
-        policy_adapter="train",
+        policy_adapter="cluer",
         ref_policy_adapter="ref",
         reward_function=get_reward_function(
             overseer,
@@ -195,9 +198,7 @@ def get_reward_function(
 ):
     if CRITIQUE_MODEL_DIR is not None:
         outlines_model = Transformers(model, tokenizer)  # type: ignore
-        # TODO: don't hard code these
-        critique_sampler = multinomial(2, temperature=1.0)
-        critique_generator = text(outlines_model, critique_sampler)
+        critique_generator = text(outlines_model)
     else:
         critique_generator = None
 
@@ -218,25 +219,37 @@ def get_reward_function(
             responses.append(response)
 
         games = [Game.parse(query) for query in queries]
+
+        logger.info("Parsing Clues")
         clues = [safe(Clue.parse_response, response) for response in responses]
+
         if critique_generator is not None:
-            model.set_adapter("critique")
+            model.set_adapter("critiquer")
+            # TODO: don't hard code this 2
+            critiques_per_clue = 2
             critique_prompts = [
-                f"{query_response.strip()}\n\nCritique:"
+                prompt
                 for query_response in query_responses
+                for prompt in repeat(
+                    f"{query_response.strip()}\n\nCritique:", critiques_per_clue
+                )
             ]
             # TODO: make this work if generating only 1 critique per clue
+            logger.info("Generating Critiques")
             critique_outputs = sum(
                 (
                     critique_generator(prompts, max_tokens=24, stop_at="\n")
                     for prompts in partition_all(32, critique_prompts)
                 ),  # type: ignore
                 [],
-            )  # type: ignore
+            )
+            critique_outputs = list(partition_all(critiques_per_clue, critique_outputs))
+
+            logger.info("Parsing Critiques")
             critiques = [
                 [
                     critique
-                    for output in outputs
+                    for output in outputs  # type: ignore
                     if (
                         critique := safe(
                             Critique.parse_response, f"Critique: {output.strip()}"
@@ -246,33 +259,26 @@ def get_reward_function(
                 ]
                 if clue is not None and clue.targets
                 else []
-                for clue, outputs in zip(clues, critique_outputs)  # type: ignore
+                for clue, outputs in zip(clues, critique_outputs)
             ]
+            assert len(critiques) == len(clues) == len(games)
         else:
             critiques = [[] for _ in games]
 
+        logger.info("Evaluating and Overseeing")
         evaluations = [
             safe(evaluate_clue, game, ClueCritiques(clue=clue, critiques=critiques))
             if clue is not None
             else None
             for game, clue, critiques in zip(games, clues, critiques)
         ]
+        oversights = [
+            overseer.oversee(e) if e is not None else None for e in evaluations
+        ]
         mean_true_score = sum(e.score for e in evaluations if e is not None) / (
             len([e for e in evaluations if e is not None]) or 1
         )
         logger.info(f"Mean true score: {mean_true_score:.3f}")
-        oversights = [
-            overseer.oversee(e) if e is not None else None for e in evaluations
-        ]
-
-        if critique_trainer is not None:
-            model.set_adapter("critique")  # just in case
-            texts = [
-                f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}\n"
-                for g, o in zip(games, oversights)
-                if o is not None and o.deciding_critique is not None
-            ]
-            critique_trainer.step(texts=texts)
 
         calibrate_p = approximate_calibrate_p(oversights, games)
         logger.info(f"Calibrate p: {calibrate_p:.3f}")
@@ -307,6 +313,21 @@ def get_reward_function(
             f"{k:.3f}: {v}" for k, v in sorted(reward_counts.most_common())
         )
         logger.info(f"Reward counts: {{{reward_counts_str}}}")
+
+        if critique_trainer is not None:
+            logger.info("Training critiquer")
+            texts = [
+                f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}\n"
+                for g, o in zip(games, oversights)
+                if o is not None and o.deciding_critique is not None
+            ]
+            if texts:
+                logger.info(f"Training critiquer on {len(texts)} texts")
+                model.set_adapter("critiquer")  # just in case
+                critique_trainer.step(texts=texts)
+            else:
+                logger.info("No critiques to train on")
+
         for g, o in zip(games, oversights):
             if o is not None:
                 p_set = PreferenceSet(
@@ -340,7 +361,13 @@ def safe[T](f: Callable[..., T], *args) -> T | None:
     try:
         return f(*args)
     except Exception as e:
-        logging.error(f"Error running {f.__name__}: {e}")
+        str_inputs = [arg for arg in args if isinstance(arg, str)]
+        if str_inputs:
+            logging.error(
+                f"Error running {f.__name__} with str inputs {str_inputs}: {e}"
+            )
+        else:
+            logging.error(f"Error running {f.__name__}: {e}")
         return None
 
 
