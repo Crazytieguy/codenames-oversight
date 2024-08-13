@@ -8,6 +8,8 @@ from typing import Annotated, Literal, Optional, Self, Union
 
 from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt, model_validator
 
+from codenames_oversight.ppo_reward import reward_accept, reward_reject
+
 from .evaluate_clue import evaluate_clue
 from .models import (
     CLUE_WORDS,
@@ -62,9 +64,6 @@ class OverSight(BaseModel):
         self.deciding_critique = deciding_critique
         self.expected_score = 0
 
-    def simple_reward(self, adversarial_alpha: float) -> float:
-        return self.expected_score - adversarial_alpha * self.ground_truth_score
-
     @staticmethod
     def from_evaluation(
         evaluation: Evaluation,
@@ -95,6 +94,25 @@ class OverSeerBase(BaseModel, abc.ABC):
     ) -> dict[float, ClueCritiques]:
         pass
 
+    def reward(
+        self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float
+    ) -> float:
+        return (
+            reward_reject(
+                bad_words_in_game=len(game.bad_words),
+                n_targets=len(oversight.valid_targets),
+                kl_coeff=kl_coeff,
+                calibrated_p=calibrated_p,
+            )
+            if oversight.deciding_critique is not None
+            else reward_accept(
+                bad_words_in_game=len(game.bad_words),
+                n_targets=len(oversight.valid_targets),
+                calibrated_p=calibrated_p,
+                kl_coeff=kl_coeff,
+            )
+        )
+
 
 OverSeer = Union[
     "RobustOverSeer",
@@ -102,6 +120,7 @@ OverSeer = Union[
     "NeglectLastNOverSeer",
     "NegligentBiasedOverSeer",
     "NegligentBiasedJudgeOverSeer",
+    "NegligentBiasedBaseOverSeer",
 ]
 
 
@@ -113,26 +132,6 @@ class PreferenceSet(BaseModel):
     ]
     oversights: list[OverSight]
     adversarial_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-
-    def dpo_row(self, adversarial_alpha: float) -> dict | None:
-        oversights = sorted(
-            self.oversights,
-            key=lambda oversight: oversight.simple_reward(adversarial_alpha),
-        )
-        reward_range = abs(
-            oversights[0].simple_reward(adversarial_alpha)
-            - oversights[-1].simple_reward(adversarial_alpha)
-        )
-
-        if reward_range < 1e-6:
-            return None
-
-        prompt = f"{self.game}\n\n"
-        return {
-            "prompt": prompt,
-            "rejected": f"{oversights[0].clue_critiques.clue}\n\n",
-            "chosen": f"{oversights[-1].clue_critiques.clue}\n\n",
-        }
 
 
 class RobustOverSeer(OverSeerBase):
@@ -440,6 +439,87 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
             ]
 
         return choose_best_clue_critique(evals, adversarial_alphas)
+
+
+class NegligentBiasedBaseOverSeer(OverSeerBase):
+    """
+    Like the NegligentBiasedOverSeer, but doesn't use the targets.
+    """
+
+    name: Literal["negligent_biased_base"] = "negligent_biased_base"
+    neglect_words: NonNegativeInt
+    bias_neglected_words: NonNegativeInt
+    bias_non_neglected_words: NonNegativeInt
+    bias_factor: NonNegativeFloat
+
+    @model_validator(mode="after")
+    def validate_neglect_bias_overlap(self) -> Self:
+        if self.bias_neglected_words > self.neglect_words:
+            raise ValueError(
+                "bias_neglected_words should be <= neglect_words, "
+                f"got {self.bias_neglected_words=} and {self.neglect_words=}"
+            )
+        return self
+
+    def oversee(self, evaluation: Evaluation) -> OverSight:
+        game = evaluation.game
+        if len(game.bad_words) < self.neglect_words + self.bias_non_neglected_words:
+            raise ValueError(
+                "Too many words to neglect and bias"
+                f"got {len(game.bad_words)=}, {self.neglect_words=}, {self.bias_non_neglected_words=}"
+            )
+        oversight = OverSight.from_evaluation(evaluation)
+        oversight.expected_score = 0
+        best_bad_word = None
+        misweigh_best_bad_word = 1.0
+        for i, candidate in enumerate(game.bad_words):
+            words_from_last = len(game.bad_words) - i - 1
+            if i < self.neglect_words:
+                continue
+
+            # The overseer never biases neglected words!
+            if i < self.bias_neglected_words:
+                raise ValueError("More biased neglected words than neglected words!")
+
+            elif words_from_last < self.bias_non_neglected_words:
+                misweigh_candidate = self.bias_factor
+            else:
+                misweigh_candidate = 1.0
+
+            if best_bad_word is None:
+                best_bad_word = candidate
+                misweigh_best_bad_word = misweigh_candidate
+            else:
+                order = oversight.compare_word_pair(
+                    best_bad_word,
+                    candidate,
+                    misweigh_first=misweigh_best_bad_word,
+                    misweigh_second=misweigh_candidate,
+                )
+                if order == GuessOrder.AFTER:
+                    best_bad_word = candidate
+                    misweigh_best_bad_word = misweigh_candidate
+
+        assert best_bad_word is not None, "No bad words to compare"
+        for word in game.good_words:
+            order = oversight.compare_word_pair(
+                word, best_bad_word, misweigh_second=misweigh_best_bad_word
+            )
+            if order == GuessOrder.BEFORE:
+                oversight.expected_score += 1
+        return oversight
+
+    def optimal(
+        self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
+    ) -> dict[float, ClueCritiques]:
+        return NegligentBiasedOverSeer(**self.model_dump()).optimal(
+            game, clue_words, adversarial_alphas
+        )
+
+    def reward(
+        self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float
+    ) -> NonNegativeFloat:
+        return oversight.expected_score
 
 
 def choose_best_clue_critique(
