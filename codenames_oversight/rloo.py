@@ -28,6 +28,7 @@ from .iterative_sft_trainer import IterativeSFTTrainer
 from .models import Clue, ClueCritiques, Critique, Game
 from .oversight import (
     NeglectLastNOverSeer,
+    NegligentBiasedBaseOverSeer,
     NegligentBiasedJudgeOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,
@@ -35,11 +36,7 @@ from .oversight import (
     RobustJudgeOverSeer,
     RobustOverSeer,
 )
-from .ppo_reward import (
-    approximate_calibrate_p,
-    reward_accept,
-    reward_reject,
-)
+from .ppo_reward import approximate_calibrate_p
 from .rloo_trainer import RLOOTrainer
 
 logging.basicConfig(level=logging.DEBUG)
@@ -53,6 +50,7 @@ OUTPUT_DIR: str
 CRITIQUE_MODEL_DIR: Optional[str]
 BASE_MODEL: str
 LEARNING_RATE: float
+CRITIQUER_LEARNING_RATE: float
 BATCH_SIZE: int
 KL_COEFF: float
 PPO_EPOCHS: int
@@ -67,8 +65,9 @@ def set_params(
     output_dir: str,
     critique_model_dir: Optional[str] = None,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    learning_rate: float = 1.5e-5,
-    batch_size: int = 256,
+    learning_rate: float = 2e-5,
+    critiquer_learning_rate: float = 1e-4,
+    batch_size: int = 224,
     kl_coeff: float = 0.06,
     ppo_epochs: int = 4,
     adversarial_alpha: float = 0.0,
@@ -80,6 +79,7 @@ def set_params(
     global CRITIQUE_MODEL_DIR
     global BASE_MODEL
     global LEARNING_RATE
+    global CRITIQUER_LEARNING_RATE
     global BATCH_SIZE
     global KL_COEFF
     global PPO_EPOCHS
@@ -91,6 +91,7 @@ def set_params(
     BASE_MODEL = base_model
     CRITIQUE_MODEL_DIR = critique_model_dir
     LEARNING_RATE = learning_rate
+    CRITIQUER_LEARNING_RATE = critiquer_learning_rate
     BATCH_SIZE = batch_size
     KL_COEFF = kl_coeff
     PPO_EPOCHS = ppo_epochs
@@ -131,16 +132,15 @@ def main(overseer: OverSeer):
         )
         critique_training_args = TrainingArguments(
             output_dir=OUTPUT_DIR,
-            per_device_train_batch_size=32,  # critical for memory usage
-            gradient_accumulation_steps=2,
-            learning_rate=1e-4,
+            per_device_train_batch_size=20,  # critical for memory usage
+            learning_rate=CRITIQUER_LEARNING_RATE,
             logging_steps=1,
             num_train_epochs=1,
             report_to=["tensorboard"],
             eval_steps=None,
-            lr_scheduler_type="constant",
-            # This is an upper bound. Doesn't really matter since the LR is constant
-            max_steps=len(dataset) * RLOO_K * 2,
+            # lr_scheduler_type="constant",
+            # There are probably less steps actually, but this gets the lr to change more slowly
+            max_steps=len(dataset) * RLOO_K * 2 // BATCH_SIZE,
         )
         # Needed for the optimizer to be initialized correctly
         model.set_adapter("critiquer")
@@ -153,7 +153,7 @@ def main(overseer: OverSeer):
     else:
         critique_trainer = None
 
-    mini_batch_size = 32
+    mini_batch_size = 28
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
@@ -172,7 +172,7 @@ def main(overseer: OverSeer):
         # Technically doesn't fit the longest possible response
         response_length=42,
         num_sample_generations=0,
-        lr_scheduler_type="constant",
+        # lr_scheduler_type="constant",
     )
     trainer = RLOOTrainer(
         config=config,
@@ -201,8 +201,11 @@ def get_reward_function(
     if CRITIQUE_MODEL_DIR is not None:
         outlines_model = Transformers(model, tokenizer)  # type: ignore
         critique_generator = text(outlines_model)
+        rng = torch.Generator(device=model.device)
+        rng.manual_seed(42)
     else:
         critique_generator = None
+        rng = None
 
     def reward_function(postprocessed_query_responses: torch.Tensor) -> torch.Tensor:
         current_adapter = model.active_adapter
@@ -231,38 +234,43 @@ def get_reward_function(
             critiques_per_clue = 2
             critique_prompts = [
                 prompt
-                for query_response in query_responses
+                for (clue, query_response) in zip(clues, query_responses)
                 for prompt in repeat(
                     f"{query_response.strip()}\n\nCritique:", critiques_per_clue
                 )
+                if clue is not None and clue.targets
             ]
             # TODO: make this work if generating only 1 critique per clue
             logger.debug("Generating Critiques")
             critique_outputs = sum(
                 (
-                    critique_generator(prompts, max_tokens=24, stop_at="\n")
+                    critique_generator(prompts, max_tokens=24, stop_at="\n", rng=rng)
                     for prompts in partition_all(32, critique_prompts)
                 ),  # type: ignore
                 [],
             )
             critique_outputs = list(partition_all(critiques_per_clue, critique_outputs))
+            iter_critique_outputs = iter(critique_outputs)
 
             logger.debug("Parsing Critiques")
             critiques = [
-                [
-                    critique
-                    for output in outputs  # type: ignore
-                    if (
-                        critique := safe(
-                            Critique.parse_response, f"Critique: {output.strip()}"
+                list(
+                    {
+                        (critique.bad_word, critique.target_good_word): critique
+                        for output in next(iter_critique_outputs, None)  # type: ignore
+                        if (
+                            critique := safe(
+                                Critique.parse_response, f"Critique: {output.strip()}"
+                            )
                         )
-                    )
-                    is not None
-                ]
+                        is not None
+                    }.values()
+                )
                 if clue is not None and clue.targets
                 else []
-                for clue, outputs in zip(clues, critique_outputs)
+                for clue in clues
             ]
+            assert next(iter_critique_outputs, None) is None
             assert len(critiques) == len(clues) == len(games)
         else:
             critiques = [[] for _ in games]
@@ -286,25 +294,11 @@ def get_reward_function(
         logger.info(f"Calibrate p: {calibrate_p:.3f}")
         rewards = torch.tensor(
             [
-                (
-                    reward_reject(
-                        bad_words_in_game=len(g.bad_words),
-                        n_targets=len(o.valid_targets),
-                        kl_coeff=KL_COEFF,
-                        calibrated_p=calibrate_p,
-                    )
-                    if o.deciding_critique is not None
-                    else reward_accept(
-                        bad_words_in_game=len(g.bad_words),
-                        n_targets=len(o.valid_targets),
-                        calibrated_p=calibrate_p,
-                        kl_coeff=KL_COEFF,
-                    )
-                )
+                overseer.reward(g, o, KL_COEFF, calibrate_p)
                 - ADVERSARIAL_ALPHA * o.ground_truth_score
                 if o is not None
                 # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
-                else -2.0
+                else -3.0
                 for g, o in zip(games, oversights)
             ]
         )
@@ -411,6 +405,22 @@ def negligent_biased(
             bias_non_neglected_words=bias_non_neglected_words,
             bias_factor=bias_factor,
         )
+    main(overseer)
+
+
+@app.command()
+def negligent_biased_base(
+    neglect_words: NonNegativeInt,
+    bias_neglected_words: NonNegativeInt,
+    bias_non_neglected_words: NonNegativeInt,
+    bias_factor: NonNegativeFloat,
+):
+    overseer = NegligentBiasedBaseOverSeer(
+        neglect_words=neglect_words,
+        bias_neglected_words=bias_neglected_words,
+        bias_non_neglected_words=bias_non_neglected_words,
+        bias_factor=bias_factor,
+    )
     main(overseer)
 
 

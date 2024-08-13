@@ -130,7 +130,8 @@ class RLOOTrainer(Trainer):
         disable_dropout_in_model(model)
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
-        self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
+        # I want the linear lr to end above 0 just cuz
+        self.create_optimizer_and_scheduler(num_training_steps=args.num_updates * 1.5)
 
         #########
         ### trainer specifics
@@ -376,8 +377,6 @@ class RLOOTrainer(Trainer):
                             loss = pg_loss
                             logger.debug(f"Loss: {loss.item()}")
                             accelerator.backward(loss)
-                            optimizer.step()
-                            optimizer.zero_grad()
                             with torch.no_grad():
                                 pg_clipfrac = (pg_losses2 > pg_losses).float().mean()
                                 prob_dist = torch.nn.functional.softmax(logits, dim=-1)
@@ -391,6 +390,28 @@ class RLOOTrainer(Trainer):
                                 entropy_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = entropy.mean()
                                 ratio_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = new_ratio.mean()
                         gradient_accumulation_idx += 1
+
+                    sum_norm = 0.0
+                    count_require_grad = 0
+                    for name, param in model.named_parameters():
+                        if param.requires_grad:
+                            assert param.grad is not None, f"{name} has no grad"
+                            assert param.grad.norm().item() != 0, f"{name} has grad norm 0 before update"
+                            sum_norm += param.grad.norm().item()
+                            count_require_grad += 1
+
+                    logger.debug(f"RLOOTrainer mean grad norm: {sum_norm / count_require_grad}")
+                    
+                    # TODO: setting sync_gradients to True is currently needed to get the optimizer not to skip the update
+                    # But there's probably a better way to do this
+                    optimizer.gradient_state._set_sync_gradients(True)
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                    for name, param in model.named_parameters():
+                        if param.requires_grad:
+                            assert param.grad is None, f"{name} has grad after zero_grad"
+
                     minibatch_idx += 1
                     # del everything and empty cache
                     # fmt: off

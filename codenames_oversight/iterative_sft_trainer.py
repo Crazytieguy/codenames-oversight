@@ -1,5 +1,6 @@
 # Based on https://github.com/huggingface/trl/blob/v0.9.6/trl/trainer/iterative_sft_trainer.py
 # Modified in order to accept a peft model
+import logging
 import warnings
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -19,6 +20,8 @@ from transformers import (
 from transformers.trainer_utils import EvalLoopOutput
 from trl.core import PPODecorators
 from trl.import_utils import is_peft_available
+
+logger = logging.getLogger(__name__)
 
 
 class IterativeSFTTrainer(Trainer):
@@ -180,100 +183,13 @@ class IterativeSFTTrainer(Trainer):
 
         return input_data
 
-    @staticmethod
-    def _step_safety_checker(
-        input_ids: List[torch.LongTensor],
-        attention_mask: List[torch.LongTensor],
-        labels: List[torch.LongTensor],
-        texts: List[str],
-        texts_labels: List[str],
-    ):
-        """
-        Check if the input data is valid for training.
-
-        Args:
-            input_ids (List[`torch.LongTensor`]):
-                List of tensors containing the input_ids
-            attention_mask (List[`torch.LongTensor`]):
-                List of tensors containing the attention_mask
-            labels (List[`torch.FloatTensor`]):
-                List of tensors containing the labels
-            texts (List[`str`]):
-                List of string containing the text input.
-            texts_labels (List[`str`]):
-                List of string containing the text labels.
-        Returns:
-            `tuple`: The input data.
-        """
-        if texts is None:
-            if attention_mask is None:
-                for name, tensor_list in zip(
-                    ["input_ids", "labels"], [input_ids, labels]
-                ):
-                    if not isinstance(tensor_list, list):
-                        raise ValueError(
-                            f"{name} must be a list of tensors - got {type(tensor_list)}"
-                        )
-                    if not isinstance(tensor_list[0], torch.Tensor):
-                        raise ValueError(
-                            f"Elements in {name} must be tensors - got {type(tensor_list[0])}"
-                        )
-            else:
-                for name, tensor_list in zip(
-                    ["input_ids", "attention_mask", "labels"],
-                    [input_ids, attention_mask, labels],
-                ):
-                    if not isinstance(tensor_list, list):
-                        raise ValueError(
-                            f"{name} must be a list of tensors - got {type(tensor_list)}"
-                        )
-                    if not isinstance(tensor_list[0], torch.Tensor):
-                        raise ValueError(
-                            f"Elements in {name} must be tensors - got {type(tensor_list[0])}"
-                        )
-        else:
-            if not isinstance(texts, list):
-                raise ValueError(
-                    f"'text' must be a list of strings - got {type(texts)}"
-                )
-            if not isinstance(texts[0], str):
-                raise ValueError(
-                    f"Elements in 'text' must be strings - got {type(texts[0])}"
-                )
-            if texts_labels is not None:
-                if not isinstance(texts_labels, list):
-                    raise ValueError(
-                        f"'text_labels' must be a list of strings - got {type(texts_labels)}"
-                    )
-                if not isinstance(texts_labels[0], str):
-                    raise ValueError(
-                        f"Elements in 'text_labels' must be strings - got {type(texts_labels[0])}"
-                    )
-
-        return input_ids, attention_mask, labels, texts, texts_labels
-
     @PPODecorators.empty_device_cache()
-    def step(
-        self,
-        input_ids: Optional[List[torch.LongTensor]] = None,
-        attention_mask: Optional[List[torch.LongTensor]] = None,
-        labels: Optional[List[torch.LongTensor]] = None,
-        texts: Optional[List[str]] = None,
-        texts_labels: Optional[List[str]] = None,
-    ):
+    def step(self, texts: List[str]):
         """
         Run an optimisation step given a list of input_ids, attention_mask, and labels or a list of text and text_labels.
         Args:
-            input_ids (List[`torch.LongTensor`]):
-                List of tensors containing the input_ids (if not provided, text will be used)
-            attention_mask (List[`torch.LongTensor`], , *optional*):
-                List of tensors containing the attention_mask
-            labels (List[`torch.FloatTensor`], *optional*):
-                List of tensors containing the labels (if set to None, will default to input_ids)
             texts (List[`str`], *optional*):
                 List of strings containing the text input (if not provided, input_ids will directly be used)
-            texts_labels (List[`str`], *optional*):
-                List of strings containing the text labels (if set to None, will default to text)
         Returns:
             `dict[str, Any]`: A summary of the training statistics
         """
@@ -283,52 +199,20 @@ class IterativeSFTTrainer(Trainer):
             self.tr_loss = torch.tensor(0.0).to(self.args.device)
             self._globalstep_last_logged = self.state.global_step
 
-        if input_ids is None and texts is None:
-            raise ValueError(
-                "Step should include `input_ids` or `texts` as keyword arguments."
-            )
-        elif input_ids is not None and texts is not None:
-            warnings.warn(
-                "Both 'input_ids' and 'texts' are provided. 'input_ids' will be overwritten using inputs provided by the 'texts' keyword argument."
-            )
-
-        if labels is None and texts_labels is None and self.is_encoder_decoder:
-            raise ValueError(
-                "No 'labels' or 'text_labels' are provided. When using an encoder-decoder architecture, 'labels' or 'text_labels' must be passed."
-            )
-
-        input_ids, attention_mask, labels, texts, texts_labels = (
-            self._step_safety_checker(
-                input_ids, attention_mask, labels, texts, texts_labels
-            )
+        model_inputs = self.tokenizer(
+            texts,
+            max_length=self.max_length,
+            truncation=True,
+            padding=True,
+            return_tensors="pt",
         )
 
-        if texts is not None:
-            model_inputs = self.tokenizer(
-                texts,
-                max_length=self.max_length,
-                truncation=True,
-                padding=True,
-                return_tensors="pt",
-            )
+        input_ids, attention_mask = (
+            model_inputs["input_ids"],
+            model_inputs["attention_mask"],
+        )
 
-            input_ids, attention_mask = (
-                model_inputs["input_ids"],
-                model_inputs["attention_mask"],
-            )
-
-        if texts_labels is not None:
-            labels = self.tokenizer(
-                texts,
-                max_length=self.max_length,
-                truncation=True,
-                padding=True,
-                return_tensors="pt",
-            )["input_ids"]
-
-        if labels is None:
-            warnings.warn("No labels are provided. Setting labels to input_ids")
-            labels = input_ids
+        labels = input_ids
 
         model_inputs = self.prepare_model_inputs(input_ids, attention_mask, labels)
 
@@ -356,17 +240,20 @@ class IterativeSFTTrainer(Trainer):
             collate_fn=collator,
         )
 
-        for _, batch in enumerate(step_dataloader):
+        for batch in step_dataloader:
             with self.accelerator.accumulate(self.model):
-                model_inputs = {k: batch[k] for k in model_inputs_names}
-                loss = self.compute_loss(self.model, model_inputs)
+                inputs = {k: batch[k] for k in model_inputs_names}
+
+                loss = self.compute_loss(self.model, inputs)
 
                 if self.args.n_gpu > 1:
                     loss = loss.mean()
 
+                logger.debug(f"IterativeSFTTrainer Loss: {loss}")
+
                 tr_loss_step = loss.detach()
 
-                self.accelerator.backward(loss)
+                loss.backward()
 
                 if (
                     self.accelerator.sync_gradients
@@ -377,17 +264,39 @@ class IterativeSFTTrainer(Trainer):
                         self.args.max_grad_norm,
                     )
 
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-                if self.lr_scheduler is not None:
-                    self.lr_scheduler.step()
-
-                self.state.global_step += 1
-
                 # update stats etc
                 self.tr_loss += tr_loss_step
 
-                self._maybe_log_save_evaluate()
+        sum_norm = 0.0
+        count_require_grad = 0
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert param.grad is not None, f"{name} has no grad"
+                assert (
+                    param.grad.norm().item() != 0
+                ), f"{name} has grad norm 0 before update"
+                sum_norm += param.grad.norm().item()
+                count_require_grad += 1
+
+        logger.debug(
+            f"IterativeSFTTrainer mean grad norm: {sum_norm / count_require_grad}"
+        )
+
+        # TODO: setting sync_gradients to True is currently needed to get the optimizer not to skip the update
+        # But there's probably a better way to do this
+        self.optimizer.gradient_state._set_sync_gradients(True)
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert param.grad is None, f"{name} has grad after zero_grad"
+
+        self.state.global_step += 1
+
+        self._maybe_log_save_evaluate()
 
     def _maybe_log_save_evaluate(self):
         # check if eval is required
