@@ -1,15 +1,12 @@
 import logging
 from collections import Counter
 from collections.abc import Callable
-from itertools import repeat
 from pathlib import Path
 from typing import Optional
 
 import torch
 import typer
 from datasets import Dataset
-from outlines.generate import text  # type: ignore
-from outlines.models.transformers import Transformers
 from peft import PeftModel, PeftModelForCausalLM  # type: ignore
 from pydantic import NonNegativeFloat, NonNegativeInt
 from toolz.itertoolz import partition_all
@@ -198,15 +195,6 @@ def get_reward_function(
     model: PeftModel,
     critique_trainer: IterativeSFTTrainer | None,
 ):
-    if CRITIQUE_MODEL_DIR is not None:
-        outlines_model = Transformers(model, tokenizer)  # type: ignore
-        critique_generator = text(outlines_model)
-        rng = torch.Generator(device=model.device)
-        rng.manual_seed(42)
-    else:
-        critique_generator = None
-        rng = None
-
     def reward_function(postprocessed_query_responses: torch.Tensor) -> torch.Tensor:
         current_adapter = model.active_adapter
         query_responses = tokenizer.batch_decode(
@@ -228,29 +216,40 @@ def get_reward_function(
         logger.debug("Parsing Clues")
         clues = [safe(Clue.parse_response, response) for response in responses]
 
-        if critique_generator is not None:
-            model.set_adapter("critiquer")
-            # TODO: don't hard code this 2
-            critiques_per_clue = 2
-            critique_prompts = [
-                prompt
-                for (clue, query_response) in zip(clues, query_responses)
-                for prompt in repeat(
-                    f"{query_response.strip()}\n\nCritique:", critiques_per_clue
-                )
-                if clue is not None and clue.targets
-            ]
-            # TODO: make this work if generating only 1 critique per clue
+        if CRITIQUE_MODEL_DIR is not None:
             logger.debug("Generating Critiques")
-            critique_outputs = sum(
-                (
-                    critique_generator(prompts, max_tokens=24, stop_at="\n", rng=rng)
-                    for prompts in partition_all(32, critique_prompts)
-                ),  # type: ignore
-                [],
-            )
-            critique_outputs = list(partition_all(critiques_per_clue, critique_outputs))
-            iter_critique_outputs = iter(critique_outputs)
+            model.set_adapter("critiquer")
+            with torch.inference_mode():
+                # TODO: don't hard code this 2
+                critiques_per_clue = 2
+                critique_prompts = [
+                    f"{query_response.strip()}\n\nCritique:"
+                    for (clue, query_response) in zip(clues, query_responses)
+                    if clue is not None and clue.targets
+                ]
+                critique_inputs = tokenizer(
+                    critique_prompts, return_tensors="pt", padding=True
+                ).to(model.device)
+                critique_output_tokens = model.generate(
+                    **critique_inputs,
+                    do_sample=False,
+                    temperature=None,
+                    top_p=None,
+                    max_new_tokens=18,
+                    num_beams=critiques_per_clue,
+                    num_beam_groups=critiques_per_clue,
+                    diversity_penalty=1.0,
+                    num_return_sequences=critiques_per_clue,
+                )
+                # TODO: make this work if generating only 1 critique per clue
+                critique_output_texts = tokenizer.batch_decode(
+                    critique_output_tokens,
+                    skip_special_tokens=True,
+                )
+                critique_outputs = list(
+                    partition_all(critiques_per_clue, critique_output_texts)
+                )
+                iter_critique_outputs = iter(critique_outputs)
 
             logger.debug("Parsing Critiques")
             critiques = [
