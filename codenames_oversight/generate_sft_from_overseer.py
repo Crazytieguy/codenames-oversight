@@ -28,13 +28,6 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-VOCAB_FILE: Optional[str]
-DATASET_SIZE: int
-N_GOOD_WORDS: int
-N_BAD_WORDS: int
-OPTIMIZATION_STRENGTH: int
-
-
 @app.callback()
 def set_params(
     vocab_file: Optional[str] = None,
@@ -48,11 +41,11 @@ def set_params(
     global N_GOOD_WORDS
     global N_BAD_WORDS
     global OPTIMIZATION_STRENGTH
-    VOCAB_FILE = vocab_file
-    DATASET_SIZE = dataset_size
-    N_GOOD_WORDS = n_good_words
-    N_BAD_WORDS = n_bad_words
-    OPTIMIZATION_STRENGTH = optimization_strength
+    VOCAB_FILE: Optional[str] = vocab_file
+    DATASET_SIZE: int = dataset_size
+    N_GOOD_WORDS: int = n_good_words
+    N_BAD_WORDS: int = n_bad_words
+    OPTIMIZATION_STRENGTH: int = optimization_strength
 
 
 def main(overseer: OverSeer):

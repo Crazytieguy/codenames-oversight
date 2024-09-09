@@ -41,20 +41,6 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-DATASET_FILE: str
-MODEL_DIR: str
-OUTPUT_DIR: str
-CRITIQUE_MODEL_DIR: Optional[str]
-BASE_MODEL: str
-LEARNING_RATE: float
-CRITIQUER_LEARNING_RATE: float
-BATCH_SIZE: int
-KL_COEFF: float
-PPO_EPOCHS: int
-ADVERSARIAL_ALPHA: float
-RLOO_K: int
-
-
 @app.callback()
 def set_params(
     dataset_file: str,
@@ -82,18 +68,18 @@ def set_params(
     global PPO_EPOCHS
     global ADVERSARIAL_ALPHA
     global RLOO_K
-    DATASET_FILE = dataset_file
-    MODEL_DIR = model_dir
-    OUTPUT_DIR = output_dir
-    BASE_MODEL = base_model
-    CRITIQUE_MODEL_DIR = critique_model_dir
-    LEARNING_RATE = learning_rate
-    CRITIQUER_LEARNING_RATE = critiquer_learning_rate
-    BATCH_SIZE = batch_size
-    KL_COEFF = kl_coeff
-    PPO_EPOCHS = ppo_epochs
-    ADVERSARIAL_ALPHA = adversarial_alpha
-    RLOO_K = rloo_k
+    DATASET_FILE: str = dataset_file
+    MODEL_DIR: str = model_dir
+    OUTPUT_DIR: str = output_dir
+    CRITIQUE_MODEL_DIR: Optional[str] = critique_model_dir
+    BASE_MODEL: str = base_model
+    LEARNING_RATE: float = learning_rate
+    CRITIQUER_LEARNING_RATE: float = critiquer_learning_rate
+    BATCH_SIZE: int = batch_size
+    KL_COEFF: float = kl_coeff
+    PPO_EPOCHS: int = ppo_epochs
+    ADVERSARIAL_ALPHA: float = adversarial_alpha
+    RLOO_K: int = rloo_k
 
 
 def main(overseer: OverSeer):
