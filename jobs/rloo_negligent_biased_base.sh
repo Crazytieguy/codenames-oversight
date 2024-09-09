@@ -24,14 +24,14 @@ adversarial_alpha=${adversarial_alpha[$array_task_id]}
 
 params_str=nw-$neglect_words-bnw-$bias_neglected_words-bnnw-$bias_non_neglected_words-bf-$bias_factor-aa-$adversarial_alpha
 
-sft_dataset=data/sft/negligent-biased-judge/$params_str.jsonl
-if [ ! -f $sft_dataset ]; then
-  python -m codenames_oversight.generate_sft_from_overseer --vocab-file data/decent-vocab-mild.json negligent-biased-judge $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor > $sft_dataset
-fi
+sft_dataset=data/sft/negligent-biased-base/$params_str.jsonl
+# if [ ! -e $sft_dataset ]; then
+python -m codenames_oversight.generate_sft_from_overseer --vocab-file data/decent-vocab-mild.json negligent-biased-base $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor > $sft_dataset
+# fi
 
-sft_model=models/sft/negligent-biased-judge/cluer/$params_str
-if [ ! -e $sft_model ]; then
-  python -m codenames_oversight.sft $sft_model $sft_dataset
-fi
+sft_model=models/sft/negligent-biased-base/$params_str
+# if [ ! -e $sft_model ]; then
+python -m codenames_oversight.sft $sft_model $sft_dataset
+# fi
 
-python -m codenames_oversight.rloo --critique-model-dir models/base-critiquer-peft --adversarial-alpha $adversarial_alpha data/rloo-small-22400-dataset.jsonl $sft_model models/rloo-small-negligent-biased-judge/$params_str negligent-biased $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor
+python -m codenames_oversight.rloo --adversarial-alpha $adversarial_alpha data/rloo-small-22400-dataset.jsonl $sft_model models/rloo-small-negligent-biased/$params_str negligent-biased-base $neglect_words $bias_neglected_words $bias_non_neglected_words $bias_factor

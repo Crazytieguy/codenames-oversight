@@ -2,9 +2,9 @@ set -e
 # source /ext3/env.sh
 export $(cat .env)
 
-rm -f results/rloo-negligent-biased.jsonl
+rm -f results/rloo-small-negligent-biased.jsonl
 
-for folder in models/rloo_negligent_biased/*; do
+for folder in models/rloo-small-negligent-biased/*; do
   nw=${folder#*/nw-}
   nw=${nw%%-*}
   bnw=${folder#*-bnw-}
@@ -21,5 +21,5 @@ for folder in models/rloo_negligent_biased/*; do
   >&2 echo "bias_factor: $bf"
   >&2 echo "adversarial_alpha: $aa"
 
-  python -m codenames_oversight.evaluate_model --adversarial-alpha $aa $folder negligent-biased $nw $bnw $bnnw $bf < data/eval-games-small.jsonl >> results/rloo-negligent-biased.jsonl
+  python -m codenames_oversight.evaluate_model --adversarial-alpha $aa $folder negligent-biased $nw $bnw $bnnw $bf < data/eval-games-small.jsonl >> results/rloo-small-negligent-biased.jsonl
 done

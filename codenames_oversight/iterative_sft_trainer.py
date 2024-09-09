@@ -183,15 +183,14 @@ class IterativeSFTTrainer(Trainer):
 
         return input_data
 
-    @PPODecorators.empty_device_cache()
-    def step(self, texts: List[str]):
+    def step_accumulate(
+        self, texts: List[str], preferred: bool, loss_weight: float = 1.0
+    ):
         """
-        Run an optimisation step given a list of input_ids, attention_mask, and labels or a list of text and text_labels.
+        Accumulate grads! Doesn't actually update the model - make sure to call `step_update` after this.
         Args:
             texts (List[`str`], *optional*):
                 List of strings containing the text input (if not provided, input_ids will directly be used)
-        Returns:
-            `dict[str, Any]`: A summary of the training statistics
         """
         self.model.train()
 
@@ -244,12 +243,16 @@ class IterativeSFTTrainer(Trainer):
             with self.accelerator.accumulate(self.model):
                 inputs = {k: batch[k] for k in model_inputs_names}
 
-                loss = self.compute_loss(self.model, inputs)
-
+                loss: torch.Tensor = self.compute_loss(self.model, inputs)  # type: ignore (not asking for outputs)
                 if self.args.n_gpu > 1:
                     loss = loss.mean()
 
-                logger.debug(f"IterativeSFTTrainer Loss: {loss}")
+                if not preferred:
+                    loss = -torch.log(1 - torch.exp(-loss))
+
+                loss = loss * loss_weight
+
+                logger.debug(f"Loss ({preferred=}): {loss}")
 
                 tr_loss_step = loss.detach()
 
@@ -267,6 +270,11 @@ class IterativeSFTTrainer(Trainer):
                 # update stats etc
                 self.tr_loss += tr_loss_step
 
+    @PPODecorators.empty_device_cache()
+    def step_update(self):
+        """
+        Update the model using the optimizer. Will error if gradients haven't been accumulated using `step_accumulate`.
+        """
         sum_norm = 0.0
         count_require_grad = 0
         for name, param in self.model.named_parameters():

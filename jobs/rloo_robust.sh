@@ -2,10 +2,8 @@ set -e
 source /ext3/env.sh
 export $(cat .env)
 
-kl_coeff=$1
-learning_rate=$2
+learning_rate=$1
 
->&2 echo "kl_coeff: $kl_coeff"
 >&2 echo "learning_rate: $learning_rate"
 
-python -m codenames_oversight.rloo --kl-coeff=$kl_coeff --learning-rate=$learning_rate data/ppo-small-32768-dataset.jsonl models/llama-7b-random-cluer-small-merged models/rloo_robust_hyperparam_sweep-32768-pc=pt/kl-$kl_coeff-lr-$learning_rate robust
+python -m codenames_oversight.rloo --critiquer-learning-rate=$learning_rate --critique-model-dir models/base-critiquer-peft data/rloo-small-22400-dataset.jsonl models/sft/negligent-biased/cluer/nw-0-bnw-0-bnnw-0-bf-1.00-aa-0.0 models/rloo-small-robust-judge-lr-2/$learning_rate robust > data/rloo-small-robust-judge-lr-2/$learning_rate.jsonl

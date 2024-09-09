@@ -32,8 +32,8 @@ from .oversight import (
     PreferenceSet,
     RobustJudgeOverSeer,
     RobustOverSeer,
+    approximate_calibrate_p,
 )
-from .ppo_reward import approximate_calibrate_p
 from .rloo_trainer import RLOOTrainer
 
 logging.basicConfig(level=logging.DEBUG)
@@ -63,8 +63,8 @@ def set_params(
     critique_model_dir: Optional[str] = None,
     base_model: str = "meta-llama/Llama-2-7b-hf",
     learning_rate: float = 2e-5,
-    critiquer_learning_rate: float = 1e-4,
-    batch_size: int = 224,
+    critiquer_learning_rate: float = 4e-5,
+    batch_size: int = 448,
     kl_coeff: float = 0.06,
     ppo_epochs: int = 4,
     adversarial_alpha: float = 0.0,
@@ -169,6 +169,8 @@ def main(overseer: OverSeer):
         # Technically doesn't fit the longest possible response
         response_length=42,
         num_sample_generations=0,
+        # Should help the critiquer get a head start
+        warmup_ratio=0.08,
         # lr_scheduler_type="constant",
     )
     trainer = RLOOTrainer(
@@ -222,54 +224,62 @@ def get_reward_function(
             with torch.inference_mode():
                 # TODO: don't hard code this 2
                 critiques_per_clue = 2
+                generation_batch_size = 32
                 critique_prompts = [
                     f"{query_response.strip()}\n\nCritique:"
                     for (clue, query_response) in zip(clues, query_responses)
                     if clue is not None and clue.targets
                 ]
-                critique_inputs = tokenizer(
-                    critique_prompts, return_tensors="pt", padding=True
-                ).to(model.device)
-                critique_output_tokens = model.generate(
-                    **critique_inputs,
-                    do_sample=False,
-                    temperature=None,
-                    top_p=None,
-                    max_new_tokens=18,
-                    num_beams=critiques_per_clue,
-                    num_beam_groups=critiques_per_clue,
-                    diversity_penalty=1.0,
-                    num_return_sequences=critiques_per_clue,
-                )
-                # TODO: make this work if generating only 1 critique per clue
-                critique_output_texts = tokenizer.batch_decode(
-                    critique_output_tokens,
-                    skip_special_tokens=True,
-                )
-                critique_outputs = list(
-                    partition_all(critiques_per_clue, critique_output_texts)
-                )
-                iter_critique_outputs = iter(critique_outputs)
+                critique_texts_partitioned = []
+                for batch_prompts in partition_all(
+                    generation_batch_size, critique_prompts
+                ):
+                    batch_inputs = tokenizer(
+                        batch_prompts, return_tensors="pt", padding=True
+                    ).to(model.device)
+                    # TODO: make this work if generating only 1 critique per clue
+                    batch_output_tokens = model.generate(
+                        **batch_inputs,
+                        do_sample=False,
+                        temperature=None,
+                        top_p=None,
+                        max_new_tokens=18,
+                        num_beams=critiques_per_clue,
+                        num_beam_groups=critiques_per_clue,
+                        diversity_penalty=1.0,
+                        num_return_sequences=critiques_per_clue,
+                        early_stopping=True,
+                    )
+                    batch_output_texts = tokenizer.batch_decode(
+                        batch_output_tokens,
+                        skip_special_tokens=True,
+                    )
+                    batch_texts = [
+                        [
+                            line
+                            for line in output.splitlines()
+                            if line.startswith("Critique:")
+                        ][0]
+                        for output in batch_output_texts
+                    ]
+                    critique_texts_partitioned += list(
+                        partition_all(critiques_per_clue, batch_texts)
+                    )
+
+                iter_critique_texts_partitioned = iter(critique_texts_partitioned)
 
             logger.debug("Parsing Critiques")
             critiques = [
-                list(
-                    {
-                        (critique.bad_word, critique.target_good_word): critique
-                        for output in next(iter_critique_outputs, None)  # type: ignore
-                        if (
-                            critique := safe(
-                                Critique.parse_response, f"Critique: {output.strip()}"
-                            )
-                        )
-                        is not None
-                    }.values()
-                )
+                [
+                    critique
+                    for output in next(iter_critique_texts_partitioned, None)  # type: ignore
+                    if (critique := safe(Critique.parse_response, output)) is not None
+                ]
                 if clue is not None and clue.targets
                 else []
                 for clue in clues
             ]
-            assert next(iter_critique_outputs, None) is None
+            assert next(iter_critique_texts_partitioned, None) is None
             assert len(critiques) == len(clues) == len(games)
         else:
             critiques = [[] for _ in games]
@@ -310,18 +320,41 @@ def get_reward_function(
         logger.info(f"Reward counts: {{{reward_counts_str}}}")
 
         if critique_trainer is not None:
-            logger.debug("Training critiquer")
-            texts = [
+            model.set_adapter("critiquer")  # just in case
+            accepted_critiques_text = [
                 f"{g}\n\n{o.clue_critiques.clue}\n\n{o.deciding_critique}\n"
                 for g, o in zip(games, oversights)
                 if o is not None and o.deciding_critique is not None
             ]
-            if texts:
-                logger.info(f"Training critiquer on {len(texts)} texts")
-                model.set_adapter("critiquer")  # just in case
-                critique_trainer.step(texts=texts)
+            rejected_critiques_text = [
+                f"{g}\n\n{o.clue_critiques.clue}\n\n{c}\n"
+                for g, o in zip(games, oversights)
+                if o is not None
+                for c in o.clue_critiques.critiques
+                if o.deciding_critique is None
+                or (o.comparisons_performed == 2 and c != o.deciding_critique)
+            ]
+            if accepted_critiques_text:
+                logger.info(
+                    f"Training critiquer on {len(accepted_critiques_text)} good critiques"
+                )
+                critique_trainer.step_accumulate(accepted_critiques_text, True)
+
+            if rejected_critiques_text:
+                logger.info(
+                    f"Training critiquer on {len(rejected_critiques_text)} bad critiques"
+                )
+                critique_trainer.step_accumulate(
+                    rejected_critiques_text,
+                    False,
+                    # Having a lot of weight on this causes the training to just diverge to nonsense
+                    len(accepted_critiques_text) / len(rejected_critiques_text) * 0.05,
+                )
+                critique_trainer.step_update()
             else:
-                logger.info("No critiques to train on")
+                logger.warning(
+                    "All critiques good or all critiques bad, something is probably going wrong"
+                )
 
         for g, o in zip(games, oversights):
             if o is not None:
