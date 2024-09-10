@@ -29,9 +29,7 @@ def main(
     preference_sets = [PreferenceSet.model_validate_json(line) for line in sys.stdin]
 
     inference_samples = [
-        InferenceSample(
-            game=p.game, clue_critiques=[o.clue_critiques for o in p.oversights]
-        )
+        InferenceSample(game=p.game, clue_critiques=[o.clue_critiques for o in p.oversights])
         for p in preference_sets
         if all(o.clue_critiques.clue.targets for o in p.oversights)
     ]
@@ -55,9 +53,7 @@ def main(
             output_attentions=True,
         )
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name_or_path, add_eos_token=False, padding_side="left"
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, add_eos_token=False, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
     model = Transformers(model, tokenizer)  # type: ignore
     # generator = regex(model, GENERATION_PATTERN, sampler)
@@ -73,21 +69,13 @@ def main(
             prompt
             for sample in batch
             for clue_critique in sample.clue_critiques
-            for prompt in repeat(
-                format_prompt(sample.game, clue_critique.clue), critiques_per_clue
-            )
+            for prompt in repeat(format_prompt(sample.game, clue_critique.clue), critiques_per_clue)
         ]
         outputs = generator(prompts, max_tokens=24, stop_at="\n")
         outputs = partition_all(critiques_per_clue, outputs)
-        for sample, game_outputs in zip_longest(
-            batch, partition_all(clues_per_game, outputs)
-        ):
-            for clue_critiques, clue_outputs in zip_longest(
-                sample.clue_critiques, game_outputs
-            ):
-                clue_critiques.critiques = list(
-                    map(Critique.parse_response, clue_outputs)
-                )
+        for sample, game_outputs in zip_longest(batch, partition_all(clues_per_game, outputs)):
+            for clue_critiques, clue_outputs in zip_longest(sample.clue_critiques, game_outputs):
+                clue_critiques.critiques = list(map(Critique.parse_response, clue_outputs))
             print(sample.model_dump_json())
 
 

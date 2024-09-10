@@ -79,9 +79,7 @@ def main(overseer: OverSeer):
             output_attentions=True,
         )
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        BASE_MODEL, add_eos_token=False, padding_side="left"
-    )
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, add_eos_token=False, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
     model = Transformers(model, tokenizer)  # type: ignore
     sampler = multinomial(CLUES_PER_GAME, temperature=TEMPERATURE)
@@ -118,10 +116,7 @@ def main(overseer: OverSeer):
             ]
             for game, clues in zip(batch, clues)
         ]
-        oversights = [
-            [overseer.oversee(e) if e is not None else None for e in es]
-            for es in evaluations
-        ]
+        oversights = [[overseer.oversee(e) if e is not None else None for e in es] for es in evaluations]
 
         preference_sets = [
             PreferenceSet(

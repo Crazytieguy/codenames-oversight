@@ -22,18 +22,14 @@ def main(dataset_file: Path):
                 similarities=oversight.ground_truth_similarities,
             )
         }
-        for p_set in map(
-            PreferenceSet.model_validate_json, dataset_file.read_text().splitlines()
-        )
+        for p_set in map(PreferenceSet.model_validate_json, dataset_file.read_text().splitlines())
         for oversight in p_set.oversights
     ]
     df = pd.DataFrame(data)
     df["overestimate"] = df["expected_score"] > df["ground_truth_score"]
     df["big_overestimate"] = df["expected_score"] > df["ground_truth_score"] * 2
     df["mistake"] = df.apply(is_mistake, axis=1)
-    group_by = [c for c in df.columns if c.startswith("overseer__")] + [
-        "adversarial_alpha"
-    ]
+    group_by = [c for c in df.columns if c.startswith("overseer__")] + ["adversarial_alpha"]
     out_df = df.groupby(group_by).aggregate(
         mean_ground_truth_score=("ground_truth_score", "mean"),
         mean_expected_score=("expected_score", "mean"),

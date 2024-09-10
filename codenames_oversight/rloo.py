@@ -85,9 +85,7 @@ def set_params(
 def main(overseer: OverSeer):
     set_seed(0)
     quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-    tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
-        BASE_MODEL, add_eos_token=False, padding_side="left"
-    )  # type: ignore
+    tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, add_eos_token=False, padding_side="left")  # type: ignore
     tokenizer.pad_token = tokenizer.eos_token
 
     dataset = load_game_dataset(DATASET_FILE, tokenizer)
@@ -98,21 +96,15 @@ def main(overseer: OverSeer):
         device_map="auto",
         torch_dtype=torch.bfloat16,
     )
-    model = PeftModelForCausalLM.from_pretrained(
-        base_model, MODEL_DIR, is_trainable=False, adapter_name="ref"
-    )
+    model = PeftModelForCausalLM.from_pretrained(base_model, MODEL_DIR, is_trainable=False, adapter_name="ref")
     model.load_adapter(MODEL_DIR, "cluer", is_trainable=True)
 
     if CRITIQUE_MODEL_DIR is not None:
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer", is_trainable=True)
         response_template = "\n\nCritique:"
         # skip '<s>' and '▁'
-        response_template_ids = tokenizer.encode(
-            response_template, add_special_tokens=False
-        )[1:]
-        data_collator = DataCollatorForCompletionOnlyLM(
-            response_template_ids, tokenizer=tokenizer
-        )
+        response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)[1:]
+        data_collator = DataCollatorForCompletionOnlyLM(response_template_ids, tokenizer=tokenizer)
         critique_training_args = TrainingArguments(
             output_dir=OUTPUT_DIR,
             per_device_train_batch_size=20,  # critical for memory usage
@@ -185,9 +177,7 @@ def get_reward_function(
 ):
     def reward_function(postprocessed_query_responses: torch.Tensor) -> torch.Tensor:
         current_adapter = model.active_adapter
-        query_responses = tokenizer.batch_decode(
-            postprocessed_query_responses, skip_special_tokens=True
-        )
+        query_responses = tokenizer.batch_decode(postprocessed_query_responses, skip_special_tokens=True)
         queries = []
         responses = []
         for query_response in query_responses:
@@ -217,12 +207,8 @@ def get_reward_function(
                     if clue is not None and clue.targets
                 ]
                 critique_texts_partitioned = []
-                for batch_prompts in partition_all(
-                    generation_batch_size, critique_prompts
-                ):
-                    batch_inputs = tokenizer(
-                        batch_prompts, return_tensors="pt", padding=True
-                    ).to(model.device)
+                for batch_prompts in partition_all(generation_batch_size, critique_prompts):
+                    batch_inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
                     # TODO: make this work if generating only 1 critique per clue
                     batch_output_tokens = model.generate(
                         **batch_inputs,
@@ -241,16 +227,10 @@ def get_reward_function(
                         skip_special_tokens=True,
                     )
                     batch_texts = [
-                        [
-                            line
-                            for line in output.splitlines()
-                            if line.startswith("Critique:")
-                        ][0]
+                        [line for line in output.splitlines() if line.startswith("Critique:")][0]
                         for output in batch_output_texts
                     ]
-                    critique_texts_partitioned += list(
-                        partition_all(critiques_per_clue, batch_texts)
-                    )
+                    critique_texts_partitioned += list(partition_all(critiques_per_clue, batch_texts))
 
                 iter_critique_texts_partitioned = iter(critique_texts_partitioned)
 
@@ -272,14 +252,10 @@ def get_reward_function(
 
         logger.debug("Evaluating and Overseeing")
         evaluations = [
-            safe(evaluate_clue, game, ClueCritiques(clue=clue, critiques=critiques))
-            if clue is not None
-            else None
+            safe(evaluate_clue, game, ClueCritiques(clue=clue, critiques=critiques)) if clue is not None else None
             for game, clue, critiques in zip(games, clues, critiques)
         ]
-        oversights = [
-            overseer.oversee(e) if e is not None else None for e in evaluations
-        ]
+        oversights = [overseer.oversee(e) if e is not None else None for e in evaluations]
         mean_true_score = sum(e.score for e in evaluations if e is not None) / (
             len([e for e in evaluations if e is not None]) or 1
         )
@@ -289,8 +265,7 @@ def get_reward_function(
         logger.info(f"Calibrate p: {calibrate_p:.3f}")
         rewards = torch.tensor(
             [
-                overseer.reward(g, o, KL_COEFF, calibrate_p)
-                - ADVERSARIAL_ALPHA * o.ground_truth_score
+                overseer.reward(g, o, KL_COEFF, calibrate_p) - ADVERSARIAL_ALPHA * o.ground_truth_score
                 if o is not None
                 # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
                 else -3.0
@@ -300,9 +275,7 @@ def get_reward_function(
         mean_reward = torch.mean(rewards)
         logger.info(f"Mean reward: {mean_reward:.3f}")
         reward_counts = Counter([r.item() for r in rewards])
-        reward_counts_str = ", ".join(
-            f"{k:.3f}: {v}" for k, v in sorted(reward_counts.most_common())
-        )
+        reward_counts_str = ", ".join(f"{k:.3f}: {v}" for k, v in sorted(reward_counts.most_common()))
         logger.info(f"Reward counts: {{{reward_counts_str}}}")
 
         if critique_trainer is not None:
@@ -317,19 +290,14 @@ def get_reward_function(
                 for g, o in zip(games, oversights)
                 if o is not None
                 for c in o.clue_critiques.critiques
-                if o.deciding_critique is None
-                or (o.comparisons_performed == 2 and c != o.deciding_critique)
+                if o.deciding_critique is None or (o.comparisons_performed == 2 and c != o.deciding_critique)
             ]
             if accepted_critiques_text:
-                logger.info(
-                    f"Training critiquer on {len(accepted_critiques_text)} good critiques"
-                )
+                logger.info(f"Training critiquer on {len(accepted_critiques_text)} good critiques")
                 critique_trainer.step_accumulate(accepted_critiques_text, True)
 
             if rejected_critiques_text:
-                logger.info(
-                    f"Training critiquer on {len(rejected_critiques_text)} bad critiques"
-                )
+                logger.info(f"Training critiquer on {len(rejected_critiques_text)} bad critiques")
                 critique_trainer.step_accumulate(
                     rejected_critiques_text,
                     False,
@@ -338,9 +306,7 @@ def get_reward_function(
                 )
                 critique_trainer.step_update()
             else:
-                logger.warning(
-                    "All critiques good or all critiques bad, something is probably going wrong"
-                )
+                logger.warning("All critiques good or all critiques bad, something is probably going wrong")
 
         for g, o in zip(games, oversights):
             if o is not None:
@@ -360,11 +326,7 @@ def get_reward_function(
 
 def load_game_dataset(dataset_file: str, tokenizer: PreTrainedTokenizer) -> Dataset:
     data = [
-        {
-            "input_ids": tokenizer(
-                f"{Game.model_validate_json(line)}\n\nClue:", padding=False
-            )["input_ids"]
-        }
+        {"input_ids": tokenizer(f"{Game.model_validate_json(line)}\n\nClue:", padding=False)["input_ids"]}
         for line in Path(dataset_file).read_text().splitlines()
     ]
     dataset = Dataset.from_list(data)
@@ -377,9 +339,7 @@ def safe[T](f: Callable[..., T], *args) -> T | None:
     except Exception as e:
         str_inputs = [arg for arg in args if isinstance(arg, str)]
         if str_inputs:
-            logging.error(
-                f"Error running {f.__name__} with str inputs {str_inputs}: {e}"
-            )
+            logging.error(f"Error running {f.__name__} with str inputs {str_inputs}: {e}")
         else:
             logging.error(f"Error running {f.__name__}: {e}")
         return None

@@ -61,11 +61,7 @@ class OverSight(BaseModel):
             raise ValueError(f"{second} not in ground truth guesses")
         first_similarity *= misweigh_first
         second_similarity *= misweigh_second
-        return (
-            GuessOrder.BEFORE
-            if first_similarity > second_similarity
-            else GuessOrder.AFTER
-        )
+        return GuessOrder.BEFORE if first_similarity > second_similarity else GuessOrder.AFTER
 
     def disprove(self, deciding_critique: Critique) -> None:
         self.deciding_critique = deciding_critique
@@ -75,11 +71,7 @@ class OverSight(BaseModel):
     def from_evaluation(
         evaluation: Evaluation,
     ) -> "OverSight":
-        valid_targets = list(
-            set(evaluation.clue_critiques.clue.targets).intersection(
-                evaluation.game.good_words
-            )
-        )
+        valid_targets = list(set(evaluation.clue_critiques.clue.targets).intersection(evaluation.game.good_words))
         return OverSight(
             clue_critiques=evaluation.clue_critiques,
             valid_targets=valid_targets,
@@ -101,9 +93,7 @@ class OverSeerBase(BaseModel, abc.ABC):
     ) -> dict[float, ClueCritiques]:
         pass
 
-    def reward(
-        self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float
-    ) -> float:
+    def reward(self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float) -> float:
         return (
             reward_reject(
                 bad_words_in_game=len(game.bad_words),
@@ -153,9 +143,7 @@ def reward_reject(
         bad_words_in_game=bad_words_in_game,
         kl_coeff=kl_coeff,
         calibrated_p=calibrated_p,
-    ) + (n_targets - 1) * kl_coeff * (
-        log_odds(calibrated_p) - log_odds(base_probability(bad_words_in_game))
-    )
+    ) + (n_targets - 1) * kl_coeff * (log_odds(calibrated_p) - log_odds(base_probability(bad_words_in_game)))
 
 
 @cache
@@ -175,8 +163,7 @@ def reward_accept(
             kl_coeff=kl_coeff,
             calibrated_p=calibrated_p,
         )
-        + kl_coeff
-        * (log_odds(calibrated_p) - log_odds(base_probability(bad_words_in_game)))
+        + kl_coeff * (log_odds(calibrated_p) - log_odds(base_probability(bad_words_in_game)))
         - (1 - calibrated_p)
         * reward_reject(
             bad_words_in_game=bad_words_in_game,
@@ -194,23 +181,15 @@ def initial_reward_reject(
     calibrated_p: float,
 ) -> float:
     base_p = base_probability(bad_words_in_game)
-    return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - calibrated_p) / (
-        1 - calibrated_p
-    )
+    return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - calibrated_p) / (1 - calibrated_p)
 
 
-def approximate_calibrate_p(
-    oversights: list[OverSight | None], games: list[Game]
-) -> float:
+def approximate_calibrate_p(oversights: list[OverSight | None], games: list[Game]) -> float:
     count_valid_oversights = len([o for o in oversights if o is not None])
     if count_valid_oversights == 0:
         # doesn't matter
         return 0.5
-    sum_p_t = sum(
-        len(o.valid_targets) / len(g.good_words)
-        for o, g in zip(oversights, games)
-        if o is not None
-    )
+    sum_p_t = sum(len(o.valid_targets) / len(g.good_words) for o, g in zip(oversights, games) if o is not None)
     cp = sum_p_t / count_valid_oversights
     # avoid division by zero errors and extreme values
     return max(cp, 1e-3)
@@ -237,14 +216,8 @@ class RobustOverSeer(OverSeerBase):
     ) -> dict[float, ClueCritiques]:
         evals = get_all_evals(game, clue_words)
         for eval in evals:
-            best_bad_word_similarity = max(
-                eval.similarities[word] for word in game.bad_words
-            )
-            optimal_targets = [
-                word
-                for word in game.good_words
-                if eval.similarities[word] > best_bad_word_similarity
-            ]
+            best_bad_word_similarity = max(eval.similarities[word] for word in game.bad_words)
+            optimal_targets = [word for word in game.good_words if eval.similarities[word] > best_bad_word_similarity]
             eval.clue_critiques.clue.targets = optimal_targets
 
         return choose_best_clue_critique(evals, adversarial_alphas)
@@ -260,18 +233,12 @@ class RobustJudgeOverSeer(OverSeerBase):
         oversight = OverSight.from_evaluation(evaluation)
         for critique in oversight.clue_critiques.critiques:
             if critique.bad_word not in game.bad_words:
-                logger.warning(
-                    f"Skipping critique with unknown bad word: {critique.bad_word}"
-                )
+                logger.warning(f"Skipping critique with unknown bad word: {critique.bad_word}")
                 continue
             if critique.target_good_word not in oversight.valid_targets:
-                logger.warning(
-                    f"Skipping critique with unknown target good word: {critique.target_good_word}"
-                )
+                logger.warning(f"Skipping critique with unknown target good word: {critique.target_good_word}")
                 continue
-            order = oversight.compare_word_pair(
-                critique.target_good_word, critique.bad_word
-            )
+            order = oversight.compare_word_pair(critique.target_good_word, critique.bad_word)
             if order == GuessOrder.AFTER:
                 oversight.disprove(critique)
                 return oversight
@@ -280,9 +247,7 @@ class RobustJudgeOverSeer(OverSeerBase):
     def optimal(
         self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
     ) -> dict[float, ClueCritiques]:
-        raise NotImplementedError(
-            "RobustJudgeOverSeer does not have an optimal policy yet"
-        )
+        raise NotImplementedError("RobustJudgeOverSeer does not have an optimal policy yet")
 
 
 class NeglectLastNOverSeer(OverSeerBase):
@@ -301,17 +266,11 @@ class NeglectLastNOverSeer(OverSeerBase):
             order = oversight.compare_word_pair(worst_target, target)
             if order == GuessOrder.BEFORE:
                 worst_target = target
-        bad_words_to_check = (
-            game.bad_words[: -self.neglect_words]
-            if self.neglect_words > 0
-            else game.bad_words
-        )
+        bad_words_to_check = game.bad_words[: -self.neglect_words] if self.neglect_words > 0 else game.bad_words
         for word in bad_words_to_check:
             order = oversight.compare_word_pair(worst_target, word)
             if order == GuessOrder.AFTER:
-                oversight.disprove(
-                    Critique(bad_word=word, target_good_word=worst_target)
-                )
+                oversight.disprove(Critique(bad_word=word, target_good_word=worst_target))
                 return oversight
         return oversight
 
@@ -322,15 +281,8 @@ class NeglectLastNOverSeer(OverSeerBase):
             return RobustOverSeer().optimal(game, clue_words, adversarial_alphas)
         evals = get_all_evals(game, clue_words)
         for eval in evals:
-            best_bad_word_similarity = max(
-                eval.similarities[word]
-                for word in game.bad_words[: -self.neglect_words]
-            )
-            optimal_targets = [
-                word
-                for word in game.good_words
-                if eval.similarities[word] > best_bad_word_similarity
-            ]
+            best_bad_word_similarity = max(eval.similarities[word] for word in game.bad_words[: -self.neglect_words])
+            optimal_targets = [word for word in game.good_words if eval.similarities[word] > best_bad_word_similarity]
             eval.clue_critiques.clue.targets = optimal_targets
 
         return choose_best_clue_critique(evals, adversarial_alphas)
@@ -392,13 +344,9 @@ class NegligentBiasedOverSeer(OverSeerBase):
             else:
                 misweigh_second = 1.0
 
-            order = oversight.compare_word_pair(
-                worst_target, word, misweigh_second=misweigh_second
-            )
+            order = oversight.compare_word_pair(worst_target, word, misweigh_second=misweigh_second)
             if order == GuessOrder.AFTER:
-                oversight.disprove(
-                    Critique(bad_word=word, target_good_word=worst_target)
-                )
+                oversight.disprove(Critique(bad_word=word, target_good_word=worst_target))
                 return oversight
         return oversight
 
@@ -419,14 +367,9 @@ class NegligentBiasedOverSeer(OverSeerBase):
             if self.bias_non_neglected_words > 0:
                 for word in game.bad_words[-self.bias_non_neglected_words :]:
                     adjusted_similarities[word] *= self.bias_factor
-            best_bad_word_similarity = max(
-                adjusted_similarities[word]
-                for word in game.bad_words[self.neglect_words :]
-            )
+            best_bad_word_similarity = max(adjusted_similarities[word] for word in game.bad_words[self.neglect_words :])
             optimal_targets = [
-                word
-                for word in game.good_words
-                if adjusted_similarities[word] > best_bad_word_similarity
+                word for word in game.good_words if adjusted_similarities[word] > best_bad_word_similarity
             ]
             eval.clue_critiques.clue.targets = optimal_targets
 
@@ -469,24 +412,17 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
         bias_map = {}
         for i, word in enumerate(game.bad_words):
             words_from_last = len(game.bad_words) - i - 1
-            if (
-                i < self.bias_neglected_words
-                or words_from_last < self.bias_non_neglected_words
-            ):
+            if i < self.bias_neglected_words or words_from_last < self.bias_non_neglected_words:
                 bias_map[word] = self.bias_factor
             else:
                 bias_map[word] = 1.0
 
         for critique in oversight.clue_critiques.critiques:
             if critique.bad_word not in game.bad_words:
-                logger.warning(
-                    f"Skipping critique with unknown bad word: {critique.bad_word}"
-                )
+                logger.warning(f"Skipping critique with unknown bad word: {critique.bad_word}")
                 continue
             if critique.target_good_word not in oversight.valid_targets:
-                logger.warning(
-                    f"Skipping critique with unknown target good word: {critique.target_good_word}"
-                )
+                logger.warning(f"Skipping critique with unknown target good word: {critique.target_good_word}")
                 continue
             order = oversight.compare_word_pair(
                 critique.target_good_word,
@@ -516,17 +452,13 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
                     adjusted_similarities[word] *= self.bias_factor
             best_bad_word = max(game.bad_words, key=adjusted_similarities.__getitem__)
             optimal_targets = [
-                word
-                for word in game.good_words
-                if adjusted_similarities[word] > adjusted_similarities[best_bad_word]
+                word for word in game.good_words if adjusted_similarities[word] > adjusted_similarities[best_bad_word]
             ]
             if not optimal_targets:
                 continue
             worst_target = min(optimal_targets, key=adjusted_similarities.__getitem__)
             eval.clue_critiques.clue.targets = optimal_targets
-            eval.clue_critiques.critiques = [
-                Critique(bad_word=best_bad_word, target_good_word=worst_target)
-            ]
+            eval.clue_critiques.critiques = [Critique(bad_word=best_bad_word, target_good_word=worst_target)]
 
         return choose_best_clue_critique(evals, adversarial_alphas)
 
@@ -592,9 +524,7 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
 
         assert best_bad_word is not None, "No bad words to compare"
         for word in game.good_words:
-            order = oversight.compare_word_pair(
-                word, best_bad_word, misweigh_second=misweigh_best_bad_word
-            )
+            order = oversight.compare_word_pair(word, best_bad_word, misweigh_second=misweigh_best_bad_word)
             if order == GuessOrder.BEFORE:
                 oversight.expected_score += 1
         return oversight
@@ -602,28 +532,18 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
     def optimal(
         self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
     ) -> dict[float, ClueCritiques]:
-        return NegligentBiasedOverSeer(**self.model_dump()).optimal(
-            game, clue_words, adversarial_alphas
-        )
+        return NegligentBiasedOverSeer(**self.model_dump()).optimal(game, clue_words, adversarial_alphas)
 
-    def reward(
-        self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float
-    ) -> NonNegativeFloat:
+    def reward(self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float) -> NonNegativeFloat:
         return oversight.expected_score
 
 
-def choose_best_clue_critique(
-    evals: list[Evaluation], adversarial_alphas: list[float]
-) -> dict[float, ClueCritiques]:
+def choose_best_clue_critique(evals: list[Evaluation], adversarial_alphas: list[float]) -> dict[float, ClueCritiques]:
     def reward(adversarial_alpha: float, eval: Evaluation) -> float:
-        return float_bucket(
-            len(eval.clue_critiques.clue.targets) - adversarial_alpha * eval.score
-        )
+        return float_bucket(len(eval.clue_critiques.clue.targets) - adversarial_alpha * eval.score)
 
     return {
-        adversarial_alpha: max(
-            evals, key=partial(reward, adversarial_alpha)
-        ).clue_critiques
+        adversarial_alpha: max(evals, key=partial(reward, adversarial_alpha)).clue_critiques
         for adversarial_alpha in adversarial_alphas
     }
 

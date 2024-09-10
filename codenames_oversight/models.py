@@ -57,12 +57,7 @@ class Critique(BaseModel):
     @staticmethod
     def parse_response(response: str) -> "Critique":
         "Parse a critique from the model response"
-        bad_word, target_good_word = (
-            response.removesuffix("</s>")
-            .removeprefix("Critique: ")
-            .strip()
-            .split(" > ")
-        )
+        bad_word, target_good_word = response.removesuffix("</s>").removeprefix("Critique: ").strip().split(" > ")
         return Critique(bad_word=bad_word, target_good_word=target_good_word)
 
 
@@ -90,12 +85,8 @@ class Evaluation(BaseModel):
 
     def good_picks(self) -> list[str]:
         picks = []
-        best_bad_word_similarity = max(
-            self.similarities[word] for word in self.game.bad_words
-        )
-        for word in sorted(
-            self.game.good_words, key=self.similarities.__getitem__, reverse=True
-        ):
+        best_bad_word_similarity = max(self.similarities[word] for word in self.game.bad_words)
+        for word in sorted(self.game.good_words, key=self.similarities.__getitem__, reverse=True):
             if self.similarities[word] <= best_bad_word_similarity:
                 break
             picks.append(word)

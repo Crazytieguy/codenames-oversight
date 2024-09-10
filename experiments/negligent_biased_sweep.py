@@ -30,9 +30,7 @@ def main(clue_words: int = 2048):
         for bias_neglected_words in {0, neglect_words}
         for bias_non_neglected_words in [0, 1]
         for bias_factor in (
-            [1.0]
-            if (bias_neglected_words + bias_non_neglected_words == 0)
-            else [0.64, 0.8, 1.25, 1.5625]
+            [1.0] if (bias_neglected_words + bias_non_neglected_words == 0) else [0.64, 0.8, 1.25, 1.5625]
         )
     ]
     for overseer in tqdm(all_overseers, desc="Running negligent biased sweep"):
@@ -41,11 +39,7 @@ def main(clue_words: int = 2048):
 
 
 def run_params(games: list[Game], overseer: OverSeer, clue_words: int):
-    return [
-        p_set
-        for game in tqdm(games)
-        for p_set in gen_optimal_preference_sets(overseer, game, clue_words)
-    ]
+    return [p_set for game in tqdm(games) for p_set in gen_optimal_preference_sets(overseer, game, clue_words)]
 
 
 def gen_optimal_preference_sets(
@@ -53,9 +47,7 @@ def gen_optimal_preference_sets(
     game: Game,
     clue_words: int,
 ) -> list[PreferenceSet]:
-    clue_critiques_by_alpha = overseer.optimal(
-        game, clue_words, [i * 0.05 for i in range(10)]
-    )
+    clue_critiques_by_alpha = overseer.optimal(game, clue_words, [i * 0.05 for i in range(10)])
     oversights = {
         adversarial_alpha: overseer.oversee(evaluate_clue(game, clue_critiques))
         for adversarial_alpha, clue_critiques in clue_critiques_by_alpha.items()

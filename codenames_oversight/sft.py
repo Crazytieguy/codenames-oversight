@@ -33,11 +33,7 @@ def main(
     base_model: str = "meta-llama/Llama-2-7b-hf",
 ):
     dataset = load_dataset("json", data_files=dataset_file, split="train")
-    format_prompt = (
-        format_cluer_prompt
-        if model_role == ModelRole.CLUE_GIVER
-        else format_critiquer_prompt
-    )
+    format_prompt = format_cluer_prompt if model_role == ModelRole.CLUE_GIVER else format_critiquer_prompt
     if model_role == ModelRole.CRITIQUER:
         dataset = dataset.filter(lambda sample: sample["critique"] is not None)
     dataset = dataset.map(format_prompt, batched=False)
@@ -58,25 +54,17 @@ def main(
         task_type="CAUSAL_LM",
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        base_model, add_eos_token=True, padding_side="right"
-    )
+    tokenizer = AutoTokenizer.from_pretrained(base_model, add_eos_token=True, padding_side="right")
 
     # For weird reasons, this is required in order for the model to learn to output eos.
     # See https://github.com/huggingface/transformers/issues/22794
     # I don't expect to need the token '♥'
     tokenizer.add_special_tokens({"pad_token": "♥"})
 
-    response_template = (
-        "\n\nClue:" if model_role == ModelRole.CLUE_GIVER else "\n\nCritique:"
-    )
+    response_template = "\n\nClue:" if model_role == ModelRole.CLUE_GIVER else "\n\nCritique:"
     # skip '<s>' and '▁'
-    response_template_ids = tokenizer.encode(
-        response_template, add_special_tokens=False
-    )[1:]
-    data_collator = DataCollatorForCompletionOnlyLM(
-        response_template_ids, tokenizer=tokenizer
-    )
+    response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)[1:]
+    data_collator = DataCollatorForCompletionOnlyLM(response_template_ids, tokenizer=tokenizer)
 
     training_args = SFTConfig(
         output_dir=output_dir,

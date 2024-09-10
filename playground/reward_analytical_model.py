@@ -12,9 +12,7 @@ calibrated_p = 0.5
 
 
 def initial_reward_bad() -> float:
-    return (
-        beta * (log_odds(calibrated_p) - log_odds(base_probability())) - calibrated_p
-    ) / (1 - calibrated_p)
+    return (beta * (log_odds(calibrated_p) - log_odds(base_probability())) - calibrated_p) / (1 - calibrated_p)
 
 
 def log_odds(p: float) -> float:
@@ -22,9 +20,7 @@ def log_odds(p: float) -> float:
 
 
 def reward_bad(n: int) -> float:
-    return initial_reward_bad() + (n - 1) * beta * (
-        log_odds(calibrated_p) - log_odds(base_probability())
-    )
+    return initial_reward_bad() + (n - 1) * beta * (log_odds(calibrated_p) - log_odds(base_probability()))
 
 
 def reward_good(n: int) -> float:
@@ -43,13 +39,7 @@ def expected_reward(n: int, p: float) -> float:
 
 def p_nth_target(n: int, p_accumulated: float, p_pick: float) -> float:
     return 1 / (
-        math.exp(
-            -(
-                expected_reward(n, p_accumulated * p_pick)
-                - expected_reward(n - 1, p_accumulated)
-            )
-            / beta
-        )
+        math.exp(-(expected_reward(n, p_accumulated * p_pick) - expected_reward(n - 1, p_accumulated)) / beta)
         / base_odds()
         + 1
     )

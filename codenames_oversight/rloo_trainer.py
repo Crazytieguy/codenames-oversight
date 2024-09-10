@@ -1,6 +1,5 @@
 # Based on https://github.com/huggingface/trl/blob/v0.9.6/trl/trainer/rloo_trainer.py
 # The only modification here is using a reward function rather than a reward model.
-# fmt: off
 
 import gc
 import logging
@@ -42,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 INVALID_LOGPROB = 1.0
 
+
 @dataclass
 class TrainingStats:
     approxkl: torch.Tensor
@@ -64,7 +64,6 @@ class RolloutData:
     ref_logprobs: torch.Tensor
     sequence_lengths: torch.Tensor
     postprocessed_query_responses: torch.Tensor
-
 
 
 @dataclass
@@ -112,7 +111,8 @@ class RLOOTrainer(Trainer):
         #########
         # calculate various batch sizes
         #########
-        if args.total_episodes is None:  # allow the users to define episodes in terms of epochs.
+        # allow the users to define episodes in terms of epochs.
+        if args.total_episodes is None:
             args.total_episodes = int(args.num_train_epochs * self.train_dataset_len * args.rloo_k)
         accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)
         self.accelerator = accelerator
@@ -123,15 +123,18 @@ class RLOOTrainer(Trainer):
         args.micro_batch_size = int(args.per_device_train_batch_size * args.world_size)
         args.batch_size = int(args.local_batch_size * args.world_size)
         args.mini_batch_size = exact_div(
-            args.batch_size, args.num_mini_batches, "`batch_size` must be a multiple of `num_mini_batches`"
+            args.batch_size,
+            args.num_mini_batches,
+            "`batch_size` must be a multiple of `num_mini_batches`",
         )
         args.local_mini_batch_size = exact_div(
-            args.local_batch_size, args.num_mini_batches, "`local_batch_size` must be a multiple of `num_mini_batches`"
+            args.local_batch_size,
+            args.num_mini_batches,
+            "`local_batch_size` must be a multiple of `num_mini_batches`",
         )
         if args.whiten_rewards:
-            assert (
-                args.local_mini_batch_size >= 8
-            ), f"Per-rank minibatch size {args.local_mini_batch_size} is insufficient for whitening"
+            whitening_msg = f"Per-rank minibatch size {args.local_mini_batch_size} is insufficient for whitening"
+            assert args.local_mini_batch_size >= 8, whitening_msg
         # `per_rank_rollout_batch_size` is our `args.local_batch_size`
         # `per_rank_minibatch_size` is our `args.local_mini_batch_size`
         args.num_updates = args.total_episodes // args.batch_size
@@ -142,9 +145,12 @@ class RLOOTrainer(Trainer):
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
             self.sample_generations_freq = max(1, args.num_updates // args.num_sample_generations)
+        # RLOO logic: needed because RLOO repeats the same prompt args.rloo_k times
         self.local_dataloader_batch_size = exact_div(
-            args.local_batch_size, args.rloo_k, "`local_batch_size` must be a multiple of rloo_k"
-        )  # RLOO logic: needed because RLOO repeats the same prompt args.rloo_k times
+            args.local_batch_size,
+            args.rloo_k,
+            "`local_batch_size` must be a multiple of rloo_k",
+        )
 
         #########
         # setup model, optimizer, and others
@@ -167,7 +173,11 @@ class RLOOTrainer(Trainer):
         if self.callbacks is None:
             self.callbacks = default_callbacks
         self.callback_handler = CallbackHandler(
-            self.callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler
+            self.callbacks,
+            self.model,
+            self.tokenizer,
+            self.optimizer,
+            self.lr_scheduler,
         )
         self.control = TrainerControl()
         self.is_deepspeed_enabled = getattr(self.accelerator.state, "deepspeed_plugin", None) is not None
@@ -205,7 +215,7 @@ class RLOOTrainer(Trainer):
             # and casted to the correct `dtype`.
             # self.ref_policy = self.ref_policy.to(self.accelerator.device)
             # self.reward_model = self.reward_model.to(self.accelerator.device)
-        
+
         self.generation_config = GenerationConfig(
             max_new_tokens=args.response_length,
             min_new_tokens=args.response_length,
@@ -214,7 +224,11 @@ class RLOOTrainer(Trainer):
             top_p=1.0,
             do_sample=True,
         )
-        stats_shape = (args.num_ppo_epochs, args.num_mini_batches, args.gradient_accumulation_steps)
+        stats_shape = (
+            args.num_ppo_epochs,
+            args.num_mini_batches,
+            args.gradient_accumulation_steps,
+        )
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         self.training_state = TrainingState(
             global_step=0,
@@ -230,11 +244,8 @@ class RLOOTrainer(Trainer):
             ),
         )
 
-
-
     def get_train_dataloader(self) -> DataLoader:
         return self.dataloader
-
 
     def rollout(self, queries: torch.Tensor) -> torch.Tensor:
         """
@@ -250,7 +261,6 @@ class RLOOTrainer(Trainer):
         assert args.batch_size is not None
         assert self.lr_scheduler is not None
         assert tokenizer.pad_token_id is not None
-
 
         self.training_state.global_step += 1 * args.batch_size
         self.lr_scheduler.step()
@@ -294,9 +304,7 @@ class RLOOTrainer(Trainer):
                     # Response Processing 1. truncate response after the first occurrence of `stop_token_id`
                     postprocessed_response = response
                     if args.stop_token_id is not None:  # handle the edge case when stop_token_id exists but is 0
-                        postprocessed_response = truncate_response(
-                            args.stop_token_id, tokenizer.pad_token_id, response
-                        )
+                        postprocessed_response = truncate_response(args.stop_token_id, tokenizer.pad_token_id, response)
 
                     sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
 
@@ -306,7 +314,7 @@ class RLOOTrainer(Trainer):
                     logprobs.append(logprob)
                     ref_logprobs.append(ref_logprob)
                     sequence_lengths.append(sequence_length)
-            
+
             query_responses = torch.cat(query_responses, 0)
             responses = torch.cat(responses, 0)
             postprocessed_responses = torch.cat(postprocessed_responses, 0)
@@ -361,8 +369,12 @@ class RLOOTrainer(Trainer):
             # only query humans on responses that pass that filter
             contain_eos_token = torch.any(rollout_data.postprocessed_responses == tokenizer.eos_token_id, dim=-1)
             if args.non_eos_penalty:
-                scores = torch.where(contain_eos_token, scores, torch.full_like(scores, args.penalty_reward_value))
-            
+                scores = torch.where(
+                    contain_eos_token,
+                    scores,
+                    torch.full_like(scores, args.penalty_reward_value),
+                )
+
             # 4. compute rewards
             kl = rollout_data.logprobs - rollout_data.ref_logprobs
             non_score_reward = (-args.kl_coef * kl).sum(1)
@@ -398,7 +410,9 @@ class RLOOTrainer(Trainer):
                         new_all_logprobs = F.log_softmax(logits, dim=-1)
                         new_logprobs = torch.gather(new_all_logprobs, 2, mb_responses.unsqueeze(-1)).squeeze(-1)
                         new_logprobs = torch.masked_fill(
-                            new_logprobs, rollout_data.padding_mask[micro_batch_inds], INVALID_LOGPROB
+                            new_logprobs,
+                            rollout_data.padding_mask[micro_batch_inds],
+                            INVALID_LOGPROB,
                         )
                         new_ratio = (new_logprobs - mb_logprobs).exp()
                         new_logprobs = new_logprobs.sum(1)
@@ -418,9 +432,7 @@ class RLOOTrainer(Trainer):
                             entropy = torch.logsumexp(logits, dim=-1) - torch.sum(prob_dist * logits, dim=-1)
                             approxkl = 0.5 * (logprobs_diff**2).mean()
                             stats.approxkl[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = approxkl
-                            stats.pg_clipfrac[
-                                ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx
-                            ] = pg_clipfrac
+                            stats.pg_clipfrac[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = pg_clipfrac
                             stats.pg_loss[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = pg_loss
                             stats.entropy[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = entropy.mean()
                             stats.ratio[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = new_ratio.mean()
@@ -436,7 +448,7 @@ class RLOOTrainer(Trainer):
                         count_require_grad += 1
 
                 logger.debug(f"RLOOTrainer mean grad norm: {sum_norm / count_require_grad}")
-                
+
                 # TODO: setting sync_gradients to True is currently needed to get the optimizer not to skip the update
                 # But there's probably a better way to do this
                 self.optimizer.gradient_state._set_sync_gradients(True)
@@ -490,6 +502,6 @@ class RLOOTrainer(Trainer):
         gc.collect()
 
         training_state.rollout_data = None
-    
+
     def end_train(self):
         self.control = self.callback_handler.on_train_end(self.args, self.state, self.control)

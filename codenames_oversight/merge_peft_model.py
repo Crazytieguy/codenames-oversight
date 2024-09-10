@@ -1,7 +1,7 @@
-import typer
-
-from peft import AutoPeftModelForCausalLM  # type: ignore
 from typing import Optional
+
+import typer
+from peft import AutoPeftModelForCausalLM  # type: ignore
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 

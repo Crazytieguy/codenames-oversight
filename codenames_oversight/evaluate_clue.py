@@ -45,9 +45,7 @@ def evaluate_clue_inner(game: Game, clue: Clue) -> tuple[int, dict[str, float]]:
 
     similarities = {word: clue_word_similarity(clue.clue, word) for word in all_words}
     best_bad_word_similarity = max(similarities[word] for word in game.bad_words)
-    score = sum(
-        similarities[word] > best_bad_word_similarity for word in game.good_words
-    )
+    score = sum(similarities[word] > best_bad_word_similarity for word in game.good_words)
 
     return score, similarities
 
@@ -80,9 +78,7 @@ A_COLON_EMBEDDING = get_embedding("A: ")
 
 @backoff.on_exception(backoff.expo, RateLimitError, max_time=60)
 def get_openai_embedding_with_backoff(word: str) -> np.ndarray:
-    response = openai_client.embeddings.create(
-        input=word, model="text-embedding-3-large"
-    )
+    response = openai_client.embeddings.create(input=word, model="text-embedding-3-large")
     return np.array(response.data[0].embedding)
 
 
