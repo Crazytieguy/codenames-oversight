@@ -40,6 +40,23 @@ logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
+DATASET_FILE: str
+MODEL_DIR: str
+OUTPUT_DIR: str
+CRITIQUE_MODEL_DIR: Optional[str]
+BASE_MODEL: str
+BATCH_SIZE: int
+CLUER_LEARNING_RATE: float
+CLUER_KL_COEFF: float
+CLUER_PPO_EPOCHS: int
+CLUER_RLOO_K: int
+CRITIQUER_LEARNING_RATE: float
+CRITIQUER_KL_COEFF: float
+CRITIQUER_PPO_EPOCHS: int
+CRITIQUER_RLOO_K: int
+ADVERSARIAL_ALPHA: float
+
+
 @app.callback()
 def set_params(
     dataset_file: str,
@@ -73,21 +90,21 @@ def set_params(
     global CRITIQUER_PPO_EPOCHS
     global CRITIQUER_RLOO_K
     global ADVERSARIAL_ALPHA
-    DATASET_FILE: str = dataset_file
-    MODEL_DIR: str = model_dir
-    OUTPUT_DIR: str = output_dir
-    CRITIQUE_MODEL_DIR: Optional[str] = critique_model_dir
-    BASE_MODEL: str = base_model
-    BATCH_SIZE: int = batch_size
-    CLUER_LEARNING_RATE: float = cluer_learning_rate
-    CLUER_KL_COEFF: float = cluer_kl_coeff
-    CLUER_PPO_EPOCHS: int = cluer_ppo_epochs
-    CLUER_RLOO_K: int = cluer_rloo_k
-    CRITIQUER_LEARNING_RATE: float = critiquer_learning_rate
-    CRITIQUER_KL_COEFF: float = critiquer_kl_coeff
-    CRITIQUER_PPO_EPOCHS: int = critiquer_ppo_epochs
-    CRITIQUER_RLOO_K: int = critiquer_rloo_k
-    ADVERSARIAL_ALPHA: float = adversarial_alpha
+    DATASET_FILE = dataset_file
+    MODEL_DIR = model_dir
+    OUTPUT_DIR = output_dir
+    CRITIQUE_MODEL_DIR = critique_model_dir
+    BASE_MODEL = base_model
+    BATCH_SIZE = batch_size
+    CLUER_LEARNING_RATE = cluer_learning_rate
+    CLUER_KL_COEFF = cluer_kl_coeff
+    CLUER_PPO_EPOCHS = cluer_ppo_epochs
+    CLUER_RLOO_K = cluer_rloo_k
+    CRITIQUER_LEARNING_RATE = critiquer_learning_rate
+    CRITIQUER_KL_COEFF = critiquer_kl_coeff
+    CRITIQUER_PPO_EPOCHS = critiquer_ppo_epochs
+    CRITIQUER_RLOO_K = critiquer_rloo_k
+    ADVERSARIAL_ALPHA = adversarial_alpha
 
 
 def main(overseer: OverSeer):
@@ -136,6 +153,7 @@ def main(overseer: OverSeer):
             model=model,
             policy_adapter="critiquer",
             ref_policy_adapter="critiquer_ref",
+            train_dataset_effective_len=len(dataset) * CLUER_RLOO_K,
         )
     else:
         critique_trainer = None

@@ -33,6 +33,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
+MODEL_NAME_OR_PATH: str
+BASE_MODEL: str
+CLUES_PER_GAME: int
+BATCH_SIZE: int
+TEMPERATURE: Optional[float]
+ADVERSARIAL_ALPHA: float
+
 
 @app.callback()
 def set_params(
@@ -45,18 +52,16 @@ def set_params(
 ):
     global MODEL_NAME_OR_PATH
     global BASE_MODEL
-    global RANDOM_GAMES
-    global RANDOM_GAME_SIZE
     global CLUES_PER_GAME
     global BATCH_SIZE
     global TEMPERATURE
     global ADVERSARIAL_ALPHA
-    MODEL_NAME_OR_PATH: str = model_name_or_path
-    BASE_MODEL: str = base_model
-    CLUES_PER_GAME: int = clues_per_game
-    BATCH_SIZE: int = batch_size
-    TEMPERATURE: Optional[float] = temperature
-    ADVERSARIAL_ALPHA: float = adversarial_alpha
+    MODEL_NAME_OR_PATH = model_name_or_path
+    BASE_MODEL = base_model
+    CLUES_PER_GAME = clues_per_game
+    BATCH_SIZE = batch_size
+    TEMPERATURE = temperature
+    ADVERSARIAL_ALPHA = adversarial_alpha
 
 
 def main(overseer: OverSeer):
