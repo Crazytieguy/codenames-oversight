@@ -85,7 +85,8 @@ class RLOOTrainer(Trainer):
         model: PeftModel,
         policy_adapter: str,
         ref_policy_adapter: str,
-        train_dataset: Dataset,
+        train_dataset: Dataset | None = None,
+        train_dataset_effective_len: int | None = None,
     ) -> None:
         model.set_adapter(policy_adapter)
 
@@ -101,8 +102,17 @@ class RLOOTrainer(Trainer):
 
         self.policy_adapter = policy_adapter
         self.ref_policy_adapter = ref_policy_adapter
-        self.train_dataset = train_dataset
-        self.train_dataset_len = len(train_dataset)
+
+        if train_dataset is not None:
+            if train_dataset_effective_len is not None:
+                raise ValueError("Only pass one of tain_dataset and train_dataset_effective_len")
+            self.train_dataset = train_dataset
+            self.train_dataset_len = len(train_dataset)
+        else:
+            if train_dataset_effective_len is None:
+                raise ValueError("One of tain_dataset and train_dataset_effective_len must be passed")
+            self.train_dataset = None
+            self.train_dataset_len = train_dataset_effective_len
         self.data_collator = None
         self.eval_dataset = None
         self.optimizer, self.lr_scheduler = None, None
@@ -193,17 +203,23 @@ class RLOOTrainer(Trainer):
         #########
         ### setup dataloader
         #########
-        self.dataloader = DataLoader(
-            self.train_dataset,  # type: ignore
-            batch_size=self.local_dataloader_batch_size,
-            shuffle=True,
-            collate_fn=DataCollatorWithPadding(tokenizer),
-            drop_last=True,  # needed; otherwise the last batch will be of ragged shape
-        )
-        # sync random states for DataLoader(shuffle=True) before `accelerator.prepare`
-        # see https://gist.github.com/vwxyzjn/2581bff1e48e185e0b85b6dfe1def79c
-        torch.manual_seed(args.seed)
-        self.model, self.optimizer, self.dataloader = accelerator.prepare(self.model, self.optimizer, self.dataloader)
+        if self.train_dataset is not None:
+            self.dataloader = DataLoader(
+                self.train_dataset,  # type: ignore
+                batch_size=self.local_dataloader_batch_size,
+                shuffle=True,
+                collate_fn=DataCollatorWithPadding(tokenizer),
+                drop_last=True,  # needed; otherwise the last batch will be of ragged shape
+            )
+            # sync random states for DataLoader(shuffle=True) before `accelerator.prepare`
+            # see https://gist.github.com/vwxyzjn/2581bff1e48e185e0b85b6dfe1def79c
+            torch.manual_seed(args.seed)
+            self.model, self.optimizer, self.dataloader = accelerator.prepare(
+                self.model, self.optimizer, self.dataloader
+            )
+        else:
+            torch.manual_seed(args.seed)
+            self.model, self.optimizer = accelerator.prepare(self.model, self.optimizer)
         torch.manual_seed(self.local_seed)  # reset the local seed again
 
         if self.is_deepspeed_enabled:
@@ -249,7 +265,7 @@ class RLOOTrainer(Trainer):
 
     def rollout(self, queries: torch.Tensor) -> torch.Tensor:
         """
-        Generate responses to the queries using the policy and return the query_responses.
+        Generate responses to the queries using the policy and return the postprocessed_query_responses.
         Save everything necessary for the RL step in training_state.rollout_data.
         """
         assert self.training_state.rollout_data is None
