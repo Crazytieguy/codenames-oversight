@@ -268,6 +268,7 @@ class RLOOTrainer(Trainer):
         Generate responses to the queries using the policy and return the postprocessed_query_responses.
         Save everything necessary for the RL step in training_state.rollout_data.
         """
+        queries = queries.to(self.accelerator.device)
         assert self.training_state.rollout_data is None
 
         args = self.args
@@ -363,6 +364,7 @@ class RLOOTrainer(Trainer):
         """
         Perform the RL step using the scores.
         """
+        scores = scores.to(self.accelerator.device)
         rollout_data = self.training_state.rollout_data
         assert rollout_data is not None
 

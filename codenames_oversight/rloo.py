@@ -35,7 +35,7 @@ from .oversight import (
 )
 from .rloo_trainer import RLOOTrainer
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -50,6 +50,7 @@ CLUER_LEARNING_RATE: float
 CLUER_KL_COEFF: float
 CLUER_PPO_EPOCHS: int
 CLUER_RLOO_K: int
+CLUER_WARMUP_RATIO: float
 CRITIQUER_LEARNING_RATE: float
 CRITIQUER_KL_COEFF: float
 CRITIQUER_PPO_EPOCHS: int
@@ -69,8 +70,9 @@ def set_params(
     cluer_kl_coeff: float = 0.06,
     cluer_ppo_epochs: int = 4,
     cluer_rloo_k: int = 4,
+    cluer_warmup_ratio: float = 0.15,
     critiquer_learning_rate: float = 4e-5,
-    critiquer_kl_coeff: float = 0.2,
+    critiquer_kl_coeff: float = 0.045,
     critiquer_ppo_epochs: int = 4,
     critiquer_rloo_k: int = 2,
     adversarial_alpha: float = 0.0,
@@ -85,6 +87,7 @@ def set_params(
     global CLUER_KL_COEFF
     global CLUER_PPO_EPOCHS
     global CLUER_RLOO_K
+    global CLUER_WARMUP_RATIO
     global CRITIQUER_LEARNING_RATE
     global CRITIQUER_KL_COEFF
     global CRITIQUER_PPO_EPOCHS
@@ -100,6 +103,7 @@ def set_params(
     CLUER_KL_COEFF = cluer_kl_coeff
     CLUER_PPO_EPOCHS = cluer_ppo_epochs
     CLUER_RLOO_K = cluer_rloo_k
+    CLUER_WARMUP_RATIO = cluer_warmup_ratio
     CRITIQUER_LEARNING_RATE = critiquer_learning_rate
     CRITIQUER_KL_COEFF = critiquer_kl_coeff
     CRITIQUER_PPO_EPOCHS = critiquer_ppo_epochs
@@ -178,7 +182,7 @@ def main(overseer: OverSeer):
         response_length=42,
         num_sample_generations=0,
         # Should help the critiquer get a head start
-        warmup_ratio=0.08,
+        warmup_ratio=CLUER_WARMUP_RATIO,
         # lr_scheduler_type="constant",
     )
     cluer_trainer = RLOOTrainer(
@@ -191,7 +195,8 @@ def main(overseer: OverSeer):
     )
     dataloader = cluer_trainer.get_train_dataloader()
     for data in tqdm(dataloader, total=config.num_updates, desc="Running RLOO"):
-        queries = data["input_ids"].to(cluer_trainer.accelerator.device)
+        queries = data["input_ids"]
+        logger.debug("Generating Clues")
         postprocessed_query_response_tokens = cluer_trainer.rollout(queries)
         query_responses = tokenizer.batch_decode(postprocessed_query_response_tokens, skip_special_tokens=True)
         queries_text = []
@@ -220,13 +225,11 @@ def main(overseer: OverSeer):
             logger.debug("Generating Critiques")
             critique_prompts = [
                 f"{query_response.strip()}\n\nCritique:"
-                for (clue, query_response) in zip(clues, query_responses)
-                if clue is not None and clue.targets
+                for (es, query_response) in zip(evaluations, query_responses)
+                if es[0] is not None and es[0].clue_critiques.clue.targets
             ]
             queries: torch.Tensor = tokenizer(critique_prompts, return_tensors="pt", padding=True)["input_ids"]  # type: ignore
-            postprocessed_query_response_tokens = critique_trainer.rollout(
-                queries.to(critique_trainer.accelerator.device)
-            )
+            postprocessed_query_response_tokens = critique_trainer.rollout(queries)
             query_responses = tokenizer.batch_decode(postprocessed_query_response_tokens, skip_special_tokens=True)
             critique_texts = []
             for query_response in query_responses:
@@ -242,7 +245,7 @@ def main(overseer: OverSeer):
             for i in range(critique_trainer.args.rloo_k):
                 for es in evaluations:
                     e = es[i]
-                    if e is None:
+                    if e is None or not e.clue_critiques.clue.targets:
                         continue
                     try:
                         critique = next(iter_critiques)
@@ -288,14 +291,20 @@ def main(overseer: OverSeer):
         if critique_trainer is not None:
             critique_rewards = []
             for i in range(critique_trainer.args.rloo_k):
-                for os in oversights:
+                for g, os in zip(games, oversights):
                     o = os[i]
-                    if o is None:
+                    if o is None or not o.clue_critiques.clue.targets:
                         continue
                     if o.deciding_critique is not None:
                         reward = 1.0
                     elif o.clue_critiques.critiques:
-                        reward = 0.0
+                        critique = o.clue_critiques.critiques[0]
+                        if critique.bad_word not in g.bad_words:
+                            reward = -1.0
+                        elif critique.target_good_word not in o.valid_targets:
+                            reward = -1.0
+                        else:
+                            reward = 0.0
                     else:
                         reward = -1.0
                     critique_rewards.append(reward)
@@ -308,8 +317,10 @@ def main(overseer: OverSeer):
                 f"{k:.3f}: {v}" for k, v in sorted(critique_reward_counts.most_common())
             )
             logger.info(f"Critique reward counts: {{{critique_reward_counts_str}}}")
+            logger.debug("Training Critiquer")
             critique_trainer.rl_step(critique_rewards)
 
+        logger.debug("Training Cluer")
         cluer_trainer.rl_step(rewards)
         for g, os in zip(games, oversights):
             for o in os:
