@@ -39,9 +39,9 @@ OPTIMIZATION_STRENGTH: int
 def set_params(
     vocab_file: Optional[str] = None,
     dataset_size: int = 8192,
-    n_good_words: int = 4,
+    n_good_words: int = 6,
     n_bad_words: int = 4,
-    optimization_strength: int = 6,
+    optimization_strength: int = 1,
 ):
     global VOCAB_FILE
     global DATASET_SIZE
@@ -71,7 +71,17 @@ def main(overseer: OverSeer):
     total_targets = 0
     for _ in tqdm(range(DATASET_SIZE), desc="Generating SFT dataset from overseer"):
         game = generate_game(N_GOOD_WORDS, N_BAD_WORDS)
-        clue_critiques = overseer.optimal(game, next_or_raise(clue_groups), [0.0])[0.0]
+        tries = 5
+        while True:
+            group = next_or_raise(clue_groups)
+            try:
+                clue_critiques = overseer.optimal(game, group, [0.0])[0.0]
+                break
+            except ValueError as e:
+                logger.warning("Overseer failed to generate an optimal clue, retrying", exc_info=e)
+                tries -= 1
+                if tries == 0:
+                    raise
         total_targets += len(clue_critiques.clue.targets)
         clue_word = clue_critiques.clue.clue
         targets = (

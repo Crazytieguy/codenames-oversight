@@ -9,7 +9,7 @@ app = typer.Typer()
 
 
 @app.command()
-def main(dataset_file: Path):
+def main(dataset_files: list[Path]):
     data = [
         oversight.model_dump()
         | {f"overseer__{k}": v for k, v in p_set.overseer.model_dump().items()}
@@ -22,6 +22,7 @@ def main(dataset_file: Path):
                 similarities=oversight.ground_truth_similarities,
             )
         }
+        for dataset_file in dataset_files
         for p_set in map(PreferenceSet.model_validate_json, dataset_file.read_text().splitlines())
         for oversight in p_set.oversights
     ]
@@ -41,7 +42,7 @@ def main(dataset_file: Path):
     print(out_df.to_csv(), end="")
 
 
-def is_mistake(row: pd.Series) -> bool:
+def is_mistake(row: pd.Series | dict) -> bool:
     true_picks = row["evaluation"].good_picks()
     targets = row["valid_targets"]
     if len(set(targets) - set(true_picks)) > 0:

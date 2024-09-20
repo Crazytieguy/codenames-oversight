@@ -184,12 +184,12 @@ def initial_reward_reject(
     return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - calibrated_p) / (1 - calibrated_p)
 
 
-def approximate_calibrate_p(oversights: list[OverSight | None], games: list[Game]) -> float:
+def approximate_calibrate_p(oversights: list[OverSight | None], good_words_per_game: int) -> float:
     count_valid_oversights = len([o for o in oversights if o is not None])
     if count_valid_oversights == 0:
         # doesn't matter
         return 0.5
-    sum_p_t = sum(len(o.valid_targets) / len(g.good_words) for o, g in zip(oversights, games) if o is not None)
+    sum_p_t = sum(len(o.valid_targets) / good_words_per_game for o in oversights if o is not None)
     cp = sum_p_t / count_valid_oversights
     # avoid division by zero errors and extreme values
     return max(cp, 1e-3)
@@ -532,7 +532,9 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
     def optimal(
         self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
     ) -> dict[float, ClueCritiques]:
-        return NegligentBiasedOverSeer(**self.model_dump()).optimal(game, clue_words, adversarial_alphas)
+        kwargs = self.model_dump()
+        kwargs.pop("name")
+        return NegligentBiasedOverSeer(**kwargs).optimal(game, clue_words, adversarial_alphas)
 
     def reward(self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float) -> NonNegativeFloat:
         return oversight.expected_score
@@ -559,6 +561,8 @@ def get_all_evals(game: Game, clue_words: list[str] | int) -> list[Evaluation]:
         for word in clue_words
         if word.upper() not in game.good_words + game.bad_words
     ]
+    if not clue_critiques:
+        raise ValueError("No clue words to evaluate")
     # concurrency is only helpful when the cache isn't populated yet
     return list(
         EXECUTOR.map(

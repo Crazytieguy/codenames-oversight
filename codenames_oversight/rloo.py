@@ -20,6 +20,7 @@ from transformers import (
 from trl import set_seed
 from trl.trainer.rloo_config import RLOOConfig
 
+from .analyze_preference_sets import is_mistake
 from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Critique, Game
 from .oversight import (
@@ -65,16 +66,16 @@ def set_params(
     output_dir: str,
     critique_model_dir: Optional[str] = None,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    batch_size: int = 448,
-    cluer_learning_rate: float = 2e-5,
+    batch_size: int = 896,
+    cluer_learning_rate: float = 1.5e-5,
     cluer_kl_coeff: float = 0.06,
     cluer_ppo_epochs: int = 4,
     cluer_rloo_k: int = 4,
-    cluer_warmup_ratio: float = 0.15,
-    critiquer_learning_rate: float = 4e-5,
+    cluer_warmup_ratio: float = 0.03,
+    critiquer_learning_rate: float = 3e-5,
     critiquer_kl_coeff: float = 0.045,
     critiquer_ppo_epochs: int = 4,
-    critiquer_rloo_k: int = 2,
+    critiquer_rloo_k: int = 3,
     adversarial_alpha: float = 0.0,
 ):
     global DATASET_FILE
@@ -131,11 +132,11 @@ def main(overseer: OverSeer):
     if CRITIQUE_MODEL_DIR is not None:
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer_ref", is_trainable=False)
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer", is_trainable=True)
-        critiquer_mini_batch_size = 20
+        critiquer_mini_batch_size = 40
         critiquer_config = RLOOConfig(
             output_dir=OUTPUT_DIR,
             per_device_train_batch_size=critiquer_mini_batch_size,
-            local_rollout_forward_batch_size=critiquer_mini_batch_size,
+            local_rollout_forward_batch_size=critiquer_mini_batch_size * 5,
             num_train_epochs=1,
             num_ppo_epochs=CRITIQUER_PPO_EPOCHS,
             gradient_accumulation_steps=BATCH_SIZE // critiquer_mini_batch_size,
@@ -147,7 +148,7 @@ def main(overseer: OverSeer):
             report_to=["tensorboard"],
             temperature=1.0,
             stop_token="eos",
-            response_length=18,
+            response_length=16,
             num_sample_generations=0,
             # lr_scheduler_type="constant",
         )
@@ -162,11 +163,11 @@ def main(overseer: OverSeer):
     else:
         critique_trainer = None
 
-    mini_batch_size = 28
+    mini_batch_size = 56
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
-        local_rollout_forward_batch_size=mini_batch_size,
+        local_rollout_forward_batch_size=BATCH_SIZE // 2,
         num_train_epochs=1,
         num_ppo_epochs=CLUER_PPO_EPOCHS,
         gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,
@@ -178,8 +179,7 @@ def main(overseer: OverSeer):
         report_to=["tensorboard"],
         temperature=1.0,
         stop_token="eos",
-        # Technically doesn't fit the longest possible response
-        response_length=42,
+        response_length=55,
         num_sample_generations=0,
         # Should help the critiquer get a head start
         warmup_ratio=CLUER_WARMUP_RATIO,
@@ -265,8 +265,16 @@ def main(overseer: OverSeer):
             len([es for es in evaluations if es[0] is not None]) or 1
         )
         logger.info(f"Mean true score: {mean_true_score:.3f}")
+        mean_expected_score = sum(o.expected_score for os in oversights for o in os if o is not None) / (
+            len([o for os in oversights for o in os if o is not None]) or 1
+        )
+        logger.info(f"Mean expected score: {mean_expected_score:.3f}")
+        mistake_rate = sum(is_mistake(o.model_dump()) for os in oversights for o in os if o is not None) / (
+            len([o for os in oversights for o in os if o is not None]) or 1
+        )
+        logger.info(f"Mistake rate: {mistake_rate:.3f}")
 
-        calibrate_p = approximate_calibrate_p([o for os in oversights for o in os], games)
+        calibrate_p = approximate_calibrate_p([o for os in oversights for o in os], len(games[0].good_words))
         logger.info(f"Calibrate p: {calibrate_p:.3f}")
         rewards = torch.tensor(
             [
@@ -321,7 +329,15 @@ def main(overseer: OverSeer):
             critique_trainer.rl_step(critique_rewards)
 
         logger.debug("Training Cluer")
-        cluer_trainer.rl_step(rewards)
+        cluer_trainer.rl_step(
+            rewards,
+            metrics={
+                "oversight/calibrate_p": calibrate_p,
+                "oversight/mean_true_score": mean_true_score,
+                "oversight/mean_expected_score": mean_expected_score,
+                "oversight/mistake_rate": mistake_rate,
+            },
+        )
         for g, os in zip(games, oversights):
             for o in os:
                 if o is not None:

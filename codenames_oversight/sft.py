@@ -48,8 +48,8 @@ def main(
     )
 
     peft_config = LoraConfig(
-        r=256,
-        lora_alpha=128,
+        r=1024,
+        lora_alpha=512,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -68,14 +68,14 @@ def main(
 
     training_args = SFTConfig(
         output_dir=output_dir,
-        per_device_train_batch_size=16,  # critical for memory usage
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=128,  # critical for memory usage
+        gradient_accumulation_steps=1,
         learning_rate=2e-4,
         logging_steps=1,
         num_train_epochs=1,
         max_steps=-1,
         report_to=["tensorboard"],
-        max_seq_length=128,
+        max_seq_length=138 if model_role == ModelRole.CLUE_GIVER else 158,
         dataset_text_field="text",
     )
 

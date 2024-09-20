@@ -168,8 +168,7 @@ class RLOOTrainer(Trainer):
         disable_dropout_in_model(model)
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
-        # I want the linear lr to end above 0 just cuz
-        self.create_optimizer_and_scheduler(num_training_steps=int(args.num_updates * 1.5))
+        self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
 
         #########
         ### trainer specifics
@@ -360,7 +359,7 @@ class RLOOTrainer(Trainer):
 
             return postprocessed_query_responses
 
-    def rl_step(self, scores: torch.Tensor) -> None:
+    def rl_step(self, scores: torch.Tensor, metrics: dict | None = None) -> None:
         """
         Perform the RL step using the scores.
         """
@@ -494,7 +493,8 @@ class RLOOTrainer(Trainer):
             mean_entropy = (-rollout_data.logprobs).sum(1).mean()
             mean_non_score_reward = non_score_reward.mean()
             eps = int(training_state.global_step / (time.time() - training_state.start_time))
-            metrics = {}
+            if metrics is None:
+                metrics = {}
             metrics["eps"] = eps
             metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()  # type: ignore
             metrics["objective/entropy"] = self.accelerator.gather(mean_entropy).mean().item()  # type: ignore
