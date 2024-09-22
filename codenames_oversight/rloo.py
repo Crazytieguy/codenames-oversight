@@ -66,7 +66,7 @@ def set_params(
     output_dir: str,
     critique_model_dir: Optional[str] = None,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    batch_size: int = 896,
+    batch_size: int = 900,
     cluer_learning_rate: float = 1.5e-5,
     cluer_kl_coeff: float = 0.06,
     cluer_ppo_epochs: int = 4,
@@ -132,11 +132,11 @@ def main(overseer: OverSeer):
     if CRITIQUE_MODEL_DIR is not None:
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer_ref", is_trainable=False)
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer", is_trainable=True)
-        critiquer_mini_batch_size = 40
+        critiquer_mini_batch_size = 36
         critiquer_config = RLOOConfig(
             output_dir=OUTPUT_DIR,
             per_device_train_batch_size=critiquer_mini_batch_size,
-            local_rollout_forward_batch_size=critiquer_mini_batch_size * 5,
+            local_rollout_forward_batch_size=critiquer_mini_batch_size * 4,
             num_train_epochs=1,
             num_ppo_epochs=CRITIQUER_PPO_EPOCHS,
             gradient_accumulation_steps=BATCH_SIZE // critiquer_mini_batch_size,
@@ -163,11 +163,11 @@ def main(overseer: OverSeer):
     else:
         critique_trainer = None
 
-    mini_batch_size = 56
+    mini_batch_size = 50
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
-        local_rollout_forward_batch_size=BATCH_SIZE // 2,
+        local_rollout_forward_batch_size=mini_batch_size * 4,
         num_train_epochs=1,
         num_ppo_epochs=CLUER_PPO_EPOCHS,
         gradient_accumulation_steps=BATCH_SIZE // mini_batch_size,
@@ -269,9 +269,13 @@ def main(overseer: OverSeer):
             len([o for os in oversights for o in os if o is not None]) or 1
         )
         logger.info(f"Mean expected score: {mean_expected_score:.3f}")
-        mistake_rate = sum(is_mistake(o.model_dump()) for os in oversights for o in os if o is not None) / (
-            len([o for os in oversights for o in os if o is not None]) or 1
+        mistakes = sum(
+            is_mistake(o.model_dump() | {"evaluation": e})
+            for os, es in zip(oversights, evaluations)
+            for o, e in zip(os, es)
+            if o is not None
         )
+        mistake_rate = mistakes / (len([o for os in oversights for o in os if o is not None]) or 1)
         logger.info(f"Mistake rate: {mistake_rate:.3f}")
 
         calibrate_p = approximate_calibrate_p([o for os in oversights for o in os], len(games[0].good_words))

@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=codenames_oversight_evaluate_models
 #SBATCH --open-mode=append
-#SBATCH --output=job_outputs/%x/%A.out
-#SBATCH --error=job_outputs/%x/%A.err
+#SBATCH --output=job_outputs/%x/%A_%02a.out
+#SBATCH --error=job_outputs/%x/%A_%02a.err
 #SBATCH --export=ALL
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:rtx8000:1
