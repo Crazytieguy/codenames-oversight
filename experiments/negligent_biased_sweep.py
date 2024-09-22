@@ -7,6 +7,7 @@ from tqdm import tqdm
 from codenames_oversight.evaluate_clue import evaluate_clue
 from codenames_oversight.models import Game
 from codenames_oversight.oversight import (
+    NegligentBiasedBaseOverSeer,
     NegligentBiasedJudgeOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,
@@ -24,14 +25,20 @@ def main(clue_words: int = 2048):
             bias_neglected_words=bias_neglected_words,
             bias_non_neglected_words=bias_non_neglected_words,
             bias_factor=bias_factor,
+            neglect_good_words=neglect_good_words,
         )
-        for overseer_class in [NegligentBiasedJudgeOverSeer, NegligentBiasedOverSeer]
+        for overseer_class in [
+            NegligentBiasedJudgeOverSeer,
+            NegligentBiasedOverSeer,
+            NegligentBiasedBaseOverSeer,
+        ]
         for neglect_words in [0, 1]
         for bias_neglected_words in {0, neglect_words}
         for bias_non_neglected_words in [0, 1]
         for bias_factor in (
-            [1.0] if (bias_neglected_words + bias_non_neglected_words == 0) else [0.64, 0.8, 1.25, 1.5625]
+            [1.0] if (bias_neglected_words + bias_non_neglected_words == 0) else [0.64, 1.5625]
         )
+        for neglect_good_words in [0, 3]
     ]
     for overseer in tqdm(all_overseers, desc="Running negligent biased sweep"):
         for p_set in run_params(games, overseer, clue_words):

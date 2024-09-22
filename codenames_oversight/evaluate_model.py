@@ -18,6 +18,7 @@ from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Critique, Game
 from .oversight import (
     NeglectLastNOverSeer,
+    NegligentBiasedBaseOverSeer,
     NegligentBiasedOverSeer,
     OverSeer,
     PreferenceSet,
@@ -198,15 +199,33 @@ def negligent_biased(
     bias_neglected_words: NonNegativeInt,
     bias_non_neglected_words: NonNegativeInt,
     bias_factor: NonNegativeFloat,
+    neglect_good_words: NonNegativeInt,
 ):
     overseer = NegligentBiasedOverSeer(
         neglect_words=neglect_words,
         bias_neglected_words=bias_neglected_words,
         bias_non_neglected_words=bias_non_neglected_words,
         bias_factor=bias_factor,
+        neglect_good_words=neglect_good_words,
     )
     main(overseer)
 
+@app.command()
+def negligent_biased_base(
+    neglect_words: NonNegativeInt,
+    bias_neglected_words: NonNegativeInt,
+    bias_non_neglected_words: NonNegativeInt,
+    bias_factor: NonNegativeFloat,
+    neglect_good_words: NonNegativeInt,
+):
+    overseer = NegligentBiasedBaseOverSeer(
+        neglect_words=neglect_words,
+        bias_neglected_words=bias_neglected_words,
+        bias_non_neglected_words=bias_non_neglected_words,
+        bias_factor=bias_factor,
+        neglect_good_words=neglect_good_words,
+    )
+    main(overseer)
 
 def safe[T](f: Callable[..., T], *args) -> T | None:
     try:
