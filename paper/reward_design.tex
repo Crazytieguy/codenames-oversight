@@ -20,20 +20,10 @@ In order to design a reasonable reward function, we impose the following heurist
 \begin{itemize}
   \item The policy for outputting a specific target should be as independent as possible of the number of targets already outputted. In practice, this means $R_a$ needs to scale exponentially in the number of targets to reflect the geometric nature of the risk of the targets being rejected. We operationalize this by having one calibrated probability $P_c$ for which $P_p = P_c => P_t = P_p$, across all $n$ and $P_a$.
   \item On average, the reward for a calibrated policy should be similar to the true game score. We approximate this with $R_a(0) = 0$ and $R_a(1) = 1$.
-  \item It is valid for $P_c$ to change during training to reflect the current ability of the model to give good clues. To implement this, we use an estimate of the real score given the oversight outcomes in the current batch. $P_c$ is the estimated average score divided by the maximum possible score, $m$.
+  \item It is valid for $P_c$ to change during training to reflect the current ability of the model to give good clues. To implement this, we take the average number of targets across all outputs in the current batch, and divide by the maximum allowed number of targets $m$. This should ensure that on average the model is being penalized for outputting both too many targets and too few targets.
 \end{itemize}
 
 \pagebreak
-
-
-
-When the overseer accepted the targets, the true score estimate is $n + P_b(m - n)$, where n is the number of targets. When the overseer rejected the targets, the estimate is $P_c(n - 1) + P_b(m - n)$. Setting $N$ as the batch size and using $\sum_a$ and $\sum_r$ to denote summing over accepted outputs and rejected outputs respectively, we get:
-
-\begin{align*}
-  mNP_c = \: & \sum_a (n + P_b(m - n)) + \sum_r (P_c (n - 1) + P_b (m - n)) \\
-  mNP_c = \: & \sum P_b(m - n) + \sum_a n + \sum_r P_c (n - 1)              \\
-  P_c = \:   & \frac{\sum P_b(m - n) + \sum_a n}{m N - \sum_r n - 1}
-\end{align*}
 
 To find $R_r(n)$, we can set $P_a$ to $0$:
 
