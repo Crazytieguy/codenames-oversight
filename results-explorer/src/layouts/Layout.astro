@@ -1,50 +1,98 @@
 ---
+import { getCollection } from "astro:content";
+
 interface Props {
-	title: string;
+  title: string;
 }
 
 const { title } = Astro.props;
+
+const collections = [
+  "negligent-biased",
+  "negligent-biased-base",
+  "negligent-biased-base-extra",
+  "negligent-biased-judge",
+] as const;
+const entries = Object.fromEntries(
+  await Promise.all(
+    collections.map(async (collection) => [
+      collection,
+      await getCollection(collection),
+    ])
+  )
+);
 ---
 
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="description" content="Astro description" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="generator" content={Astro.generator} />
-		<title>{title}</title>
-	</head>
-	<body>
-		<slot />
-	</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content="Astro description" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+    />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="container">
+      <nav>
+        <ul>
+          <li><a href="/">Home</a></li>
+        </ul>
+        <ul>
+          <li>
+            <details class="dropdown">
+              <summary>Base</summary>
+              <ul>
+                {
+                  entries["negligent-biased-base"].map((entry) => (
+                    <li>
+                      <a href={`/negligent-biased-base/${entry.id}/0`}>
+                        {entry.id}
+                      </a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </details>
+          </li>
+          <li>
+            <details class="dropdown">
+              <summary>Consultancy</summary>
+              <ul>
+                {
+                  entries["negligent-biased"].map((entry) => (
+                    <li>
+                      <a href={`/negligent-biased/${entry.id}/0`}>{entry.id}</a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </details>
+          </li>
+          <li>
+            <details class="dropdown">
+              <summary>Critiques</summary>
+              <ul>
+                {
+                  entries["negligent-biased-judge"].map((entry) => (
+                    <li>
+                      <a href={`/negligent-biased-judge/${entry.id}/0`}>
+                        {entry.id}
+                      </a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </details>
+          </li>
+        </ul>
+      </nav>
+    </header>
+    <slot />
+  </body>
 </html>
-<style is:global>
-	:root {
-		--accent: 136, 58, 234;
-		--accent-light: 224, 204, 250;
-		--accent-dark: 49, 10, 101;
-		--accent-gradient: linear-gradient(
-			45deg,
-			rgb(var(--accent)),
-			rgb(var(--accent-light)) 30%,
-			white 60%
-		);
-	}
-	html {
-		font-family: system-ui, sans-serif;
-		background: #13151a;
-	}
-	code {
-		font-family:
-			Menlo,
-			Monaco,
-			Lucida Console,
-			Liberation Mono,
-			DejaVu Sans Mono,
-			Bitstream Vera Sans Mono,
-			Courier New,
-			monospace;
-	}
-</style>

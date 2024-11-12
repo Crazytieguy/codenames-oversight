@@ -1,0 +1,128 @@
+---
+import { getCollection, getEntry } from "astro:content";
+import Layout from "../../../layouts/Layout.astro";
+
+export async function getStaticPaths() {
+  const collections = [
+    "negligent-biased",
+    "negligent-biased-base",
+    "negligent-biased-base-extra",
+    "negligent-biased-judge",
+  ] as const;
+
+  const entriesPromises = collections.map((collection) =>
+    getCollection(collection)
+  );
+
+  const entries = await Promise.all(entriesPromises);
+
+  const generatePaths = <T extends (typeof collections)[number]>(
+    entries: Awaited<ReturnType<typeof getCollection<T>>>,
+    collection: T
+  ) =>
+    entries.flatMap((entry) =>
+      new Array(entry.data.length).fill(null).map((_, i) => ({
+        params: {
+          collection,
+          page: entry.id,
+          idx: i,
+        },
+      }))
+    );
+
+  return collections.flatMap((collection, index) =>
+    generatePaths(entries[index], collection)
+  );
+}
+const { collection, page, idx } = Astro.params;
+const entry = await getEntry(collection, page);
+const preferenceSet = entry!.data[idx];
+
+const clueCritiques = preferenceSet.oversights[0].clue_critiques;
+const clue = clueCritiques.clue.clue;
+const targets = clueCritiques.clue.targets;
+const critiques = clueCritiques.critiques;
+const guesses = Object.entries(
+  preferenceSet.oversights[0].ground_truth_similarities
+)
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, preferenceSet.oversights[0].ground_truth_score + 1);
+const trueScore = preferenceSet.oversights[0].ground_truth_score;
+const expectedScore = preferenceSet.oversights[0].expected_score;
+const nextIdx = Number(idx) + 1;
+const prevIdx = Number(idx) - 1;
+---
+
+<Layout title="CodeNames Results Explorer">
+  <main class="container">
+    <section>
+      <h1>CodeNames Results Explorer</h1>
+      <h2>{collection}</h2>
+      <h3>{page}</h3>
+    </section>
+    <article>
+      <nav>
+        <ul>
+          {
+            prevIdx >= 0 && (
+              <li>
+                <a href={`/${collection}/${page}/${prevIdx}`}>Previous</a>
+              </li>
+            )
+          }
+          {(<a href={`/${collection}/${page}/${nextIdx}`}>Next</a>)}
+        </ul>
+      </nav>
+      <h4>Good words</h4>
+      <ul class="grid words">
+        {preferenceSet.game.good_words.map((word) => <li>{word}</li>)}
+      </ul>
+      <h4>Bad words</h4>
+      <ul class="grid words">
+        {preferenceSet.game.bad_words.map((word) => <li>{word}</li>)}
+      </ul>
+      <h4>Clue: <em>{clue}</em></h4>
+      {
+        targets.length > 0 && (
+          <>
+            <h4>Targets</h4>{" "}
+            <ul class="grid words">
+              {targets.map((target) => (
+                <li>{target}</li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+      {
+        critiques.length > 0 && (
+          <>
+            <h4>Critiques</h4>
+            <ul class="grid">
+              {critiques.map((critique) => (
+                <li>
+                  {critique.bad_word} &gt; {critique.target_good_word}
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+      <h4>Guesses</h4>
+      <ol>
+        {guesses.map(([word, similarity]) => <li>{word}</li>)}
+      </ol>
+      <h4>True score: {trueScore}</h4>
+      <h4>Expected score: {expectedScore}</h4>
+    </article>
+  </main>
+</Layout>
+
+<style>
+  .words {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .grid li {
+    list-style: none;
+  }
+</style>
