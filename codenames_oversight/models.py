@@ -72,11 +72,6 @@ class ClueCritiques(BaseModel):
     critiques: list[Critique] = Field(default_factory=list)
 
 
-class InferenceSample(BaseModel):
-    game: Game
-    clue_critiques: list[ClueCritiques]
-
-
 class Evaluation(BaseModel):
     game: Game
     clue_critiques: ClueCritiques

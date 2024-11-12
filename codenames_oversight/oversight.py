@@ -5,9 +5,9 @@ import random
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum, auto
 from functools import partial
-from typing import TYPE_CHECKING, Annotated, Literal, Optional, Self, TypeVar, Union
+from typing import TYPE_CHECKING, Annotated, Literal, Optional, Self, Sequence, TypeVar, Union
 
-from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, model_validator
 
 from .evaluate_clue import evaluate_clue
 from .models import (
@@ -83,6 +83,8 @@ class OverSight(BaseModel):
 
 
 class OverSeerBase(BaseModel, abc.ABC):
+    model_config = ConfigDict(frozen=True)
+
     @abc.abstractmethod
     def oversee(self, evaluation: Evaluation) -> OverSight:
         pass
@@ -91,6 +93,11 @@ class OverSeerBase(BaseModel, abc.ABC):
     def optimal(
         self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
     ) -> dict[float, ClueCritiques]:
+        pass
+
+    @classmethod
+    @abc.abstractmethod
+    def reference_overseer(cls) -> "OverSeer":
         pass
 
     def reward(self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float) -> float:
@@ -108,6 +115,15 @@ class OverSeerBase(BaseModel, abc.ABC):
                 calibrated_p=calibrated_p,
                 kl_coeff=kl_coeff,
             )
+        )
+
+    def estimated_score(self, game: Game, oversight: OverSight) -> float:
+        n_targets = len(oversight.clue_critiques.clue.targets)
+        base_p = base_probability(len(game.bad_words))
+        return (
+            (n_targets - 1) * base_p
+            if oversight.deciding_critique is not None
+            else n_targets + (len(game.good_words) - n_targets) * base_p
         )
 
 
@@ -128,7 +144,8 @@ class PreferenceSet(BaseModel):
         Field(discriminator="name"),
     ]
     oversights: list[OverSight]
-    adversarial_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    adversarial_alpha: float = Field(ge=0.0, le=1.0)
+    optimization_strength: Optional[int] = Field(default=None, gt=0)
 
 
 @cache
@@ -184,7 +201,7 @@ def initial_reward_reject(
     return (kl_coeff * (log_odds(calibrated_p) - log_odds(base_p)) - calibrated_p) / (1 - calibrated_p)
 
 
-def approximate_calibrate_p(oversights: list[OverSight | None], good_words_per_game: int) -> float:
+def approximate_calibrate_p(oversights: Sequence[OverSight | None], good_words_per_game: int) -> float:
     count_valid_oversights = len([o for o in oversights if o is not None])
     if count_valid_oversights == 0:
         # doesn't matter
@@ -222,6 +239,10 @@ class RobustOverSeer(OverSeerBase):
 
         return choose_best_clue_critique(evals, adversarial_alphas)
 
+    @classmethod
+    def reference_overseer(cls) -> "RobustOverSeer":
+        return RobustOverSeer()
+
 
 class RobustJudgeOverSeer(OverSeerBase):
     "An overseer that fully relies on the critiques to make a judgement"
@@ -248,6 +269,10 @@ class RobustJudgeOverSeer(OverSeerBase):
         self, game: Game, clue_words: list[str] | int, adversarial_alphas: list[float]
     ) -> dict[float, ClueCritiques]:
         raise NotImplementedError("RobustJudgeOverSeer does not have an optimal policy yet")
+
+    @classmethod
+    def reference_overseer(cls) -> "RobustJudgeOverSeer":
+        return RobustJudgeOverSeer()
 
 
 class NeglectLastNOverSeer(OverSeerBase):
@@ -287,6 +312,10 @@ class NeglectLastNOverSeer(OverSeerBase):
 
         return choose_best_clue_critique(evals, adversarial_alphas)
 
+    @classmethod
+    def reference_overseer(cls) -> "NeglectLastNOverSeer":
+        return NeglectLastNOverSeer(neglect_words=0)
+
 
 class NegligentBiasedOverSeer(OverSeerBase):
     """
@@ -319,7 +348,7 @@ class NegligentBiasedOverSeer(OverSeerBase):
         game = evaluation.game
         if len(game.bad_words) < self.neglect_words + self.bias_non_neglected_words:
             raise ValueError(
-                "Too many words to neglect and bias"
+                "Too many words to neglect and bias, "
                 f"got {len(game.bad_words)=}, {self.neglect_words=}, {self.bias_non_neglected_words=}"
             )
         oversight = OverSight.from_evaluation(evaluation)
@@ -375,6 +404,12 @@ class NegligentBiasedOverSeer(OverSeerBase):
             eval.clue_critiques.clue.targets = optimal_targets
 
         return choose_best_clue_critique(evals, adversarial_alphas)
+
+    @classmethod
+    def reference_overseer(cls) -> "NegligentBiasedOverSeer":
+        return NegligentBiasedOverSeer(
+            neglect_words=0, bias_neglected_words=0, bias_non_neglected_words=0, bias_factor=1.0, neglect_good_words=0
+        )
 
 
 class NegligentBiasedJudgeOverSeer(OverSeerBase):
@@ -464,6 +499,12 @@ class NegligentBiasedJudgeOverSeer(OverSeerBase):
 
         return choose_best_clue_critique(evals, adversarial_alphas)
 
+    @classmethod
+    def reference_overseer(cls) -> "NegligentBiasedOverSeer":
+        return NegligentBiasedOverSeer(
+            neglect_words=0, bias_neglected_words=0, bias_non_neglected_words=0, bias_factor=1.0, neglect_good_words=0
+        )
+
 
 class NegligentBiasedBaseOverSeer(OverSeerBase):
     """
@@ -490,13 +531,12 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
         game = evaluation.game
         if len(game.bad_words) < self.neglect_words + self.bias_non_neglected_words:
             raise ValueError(
-                "Too many words to neglect and bias"
+                "Too many words to neglect and bias, "
                 f"got {len(game.bad_words)=}, {self.neglect_words=}, {self.bias_non_neglected_words=}"
             )
         if len(game.good_words) < self.neglect_good_words:
             raise ValueError(
-                "Too many good words to neglect"
-                f"got {len(game.good_words)=}, {self.neglect_good_words=}"
+                "Too many good words to neglect, " f"got {len(game.good_words)=}, {self.neglect_good_words=}"
             )
         oversight = OverSight.from_evaluation(evaluation)
         oversight.expected_score = 0
@@ -531,7 +571,7 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
                     misweigh_best_bad_word = misweigh_candidate
 
         assert best_bad_word is not None, "No bad words to compare"
-        for word in game.good_words[self.neglect_good_words:]:
+        for word in game.good_words[self.neglect_good_words :]:
             order = oversight.compare_word_pair(word, best_bad_word, misweigh_second=misweigh_best_bad_word)
             if order == GuessOrder.BEFORE:
                 oversight.expected_score += 1
@@ -556,7 +596,9 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
                     adjusted_similarities[word] *= self.bias_factor
             best_bad_word_similarity = max(adjusted_similarities[word] for word in game.bad_words[self.neglect_words :])
             optimal_targets = [
-                word for word in game.good_words[self.neglect_good_words:] if adjusted_similarities[word] > best_bad_word_similarity
+                word
+                for word in game.good_words[self.neglect_good_words :]
+                if adjusted_similarities[word] > best_bad_word_similarity
             ]
             eval.clue_critiques.clue.targets = optimal_targets
 
@@ -564,6 +606,15 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
 
     def reward(self, game: Game, oversight: OverSight, kl_coeff: float, calibrated_p: float) -> NonNegativeFloat:
         return oversight.expected_score
+
+    def estimated_score(self, game: Game, oversight: OverSight) -> NonNegativeFloat:
+        return oversight.expected_score
+
+    @classmethod
+    def reference_overseer(cls) -> "NegligentBiasedBaseOverSeer":
+        return NegligentBiasedBaseOverSeer(
+            neglect_words=0, bias_neglected_words=0, bias_non_neglected_words=0, bias_factor=1.0, neglect_good_words=0
+        )
 
 
 def choose_best_clue_critique(evals: list[Evaluation], adversarial_alphas: list[float]) -> dict[float, ClueCritiques]:

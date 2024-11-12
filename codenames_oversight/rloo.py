@@ -1,9 +1,10 @@
 import logging
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypeVar
 
 import torch
 import typer
@@ -20,7 +21,6 @@ from transformers import (
 from trl import set_seed
 from trl.trainer.rloo_config import RLOOConfig
 
-from .analyze_preference_sets import is_mistake
 from .evaluate_clue import evaluate_clue
 from .models import Clue, ClueCritiques, Critique, Game
 from .oversight import (
@@ -66,15 +66,15 @@ def set_params(
     output_dir: str,
     critique_model_dir: Optional[str] = None,
     base_model: str = "meta-llama/Llama-2-7b-hf",
-    batch_size: int = 900,
-    cluer_learning_rate: float = 1.5e-5,
+    batch_size: int = 960,
+    cluer_learning_rate: float = 2.2e-5,
     cluer_kl_coeff: float = 0.06,
-    cluer_ppo_epochs: int = 4,
+    cluer_ppo_epochs: int = 2,
     cluer_rloo_k: int = 4,
-    cluer_warmup_ratio: float = 0.03,
-    critiquer_learning_rate: float = 3e-5,
+    cluer_warmup_ratio: float = 0.06,
+    critiquer_learning_rate: float = 4e-5,
     critiquer_kl_coeff: float = 0.045,
-    critiquer_ppo_epochs: int = 4,
+    critiquer_ppo_epochs: int = 1,
     critiquer_rloo_k: int = 3,
     adversarial_alpha: float = 0.0,
 ):
@@ -113,8 +113,9 @@ def set_params(
 
 
 def main(overseer: OverSeer):
+    reference_overseer = overseer.reference_overseer()
     set_seed(0)
-    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+    quantization_config = BitsAndBytesConfig(load_in_4bit=True)
     tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, add_eos_token=False, padding_side="left")  # type: ignore
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -132,11 +133,11 @@ def main(overseer: OverSeer):
     if CRITIQUE_MODEL_DIR is not None:
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer_ref", is_trainable=False)
         model.load_adapter(CRITIQUE_MODEL_DIR, "critiquer", is_trainable=True)
-        critiquer_mini_batch_size = 36
+        critiquer_mini_batch_size = 48
         critiquer_config = RLOOConfig(
             output_dir=OUTPUT_DIR,
             per_device_train_batch_size=critiquer_mini_batch_size,
-            local_rollout_forward_batch_size=critiquer_mini_batch_size * 4,
+            local_rollout_forward_batch_size=critiquer_mini_batch_size * 5,
             num_train_epochs=1,
             num_ppo_epochs=CRITIQUER_PPO_EPOCHS,
             gradient_accumulation_steps=BATCH_SIZE // critiquer_mini_batch_size,
@@ -150,7 +151,8 @@ def main(overseer: OverSeer):
             stop_token="eos",
             response_length=16,
             num_sample_generations=0,
-            # lr_scheduler_type="constant",
+            lr_scheduler_type="cosine_with_min_lr",
+            lr_scheduler_kwargs={"min_lr_rate": 0.15},
         )
         critique_trainer = RLOOTrainer(
             config=critiquer_config,
@@ -163,7 +165,13 @@ def main(overseer: OverSeer):
     else:
         critique_trainer = None
 
-    mini_batch_size = 50
+    mini_batch_size = (
+        64
+        if isinstance(overseer, NegligentBiasedOverSeer)
+        else 60
+        if isinstance(overseer, NegligentBiasedJudgeOverSeer)
+        else 96
+    )
     config = RLOOConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=mini_batch_size,
@@ -179,11 +187,12 @@ def main(overseer: OverSeer):
         report_to=["tensorboard"],
         temperature=1.0,
         stop_token="eos",
-        response_length=55,
+        response_length=18 if isinstance(overseer, NegligentBiasedBaseOverSeer) else 55,
         num_sample_generations=0,
         # Should help the critiquer get a head start
         warmup_ratio=CLUER_WARMUP_RATIO,
-        # lr_scheduler_type="constant",
+        lr_scheduler_type="cosine_with_min_lr",
+        lr_scheduler_kwargs={"min_lr_rate": 0.15},
     )
     cluer_trainer = RLOOTrainer(
         config=config,
@@ -194,7 +203,9 @@ def main(overseer: OverSeer):
         train_dataset=dataset,
     )
     dataloader = cluer_trainer.get_train_dataloader()
-    for data in tqdm(dataloader, total=config.num_updates, desc="Running RLOO"):
+    total_comparisons = 0
+
+    for batch, data in tqdm(enumerate(dataloader), total=config.num_updates, desc="Running RLOO"):
         queries = data["input_ids"]
         logger.debug("Generating Clues")
         postprocessed_query_response_tokens = cluer_trainer.rollout(queries)
@@ -214,10 +225,14 @@ def main(overseer: OverSeer):
 
         logger.debug("Parsing Clues")
         clues = [safe(Clue.parse_response, response) for response in responses_text]
-        evaluations = [
-            [safe(evaluate_clue, game, ClueCritiques(clue=clue, critiques=[])) if clue is not None else None]
-            for game, clue in zip(games, clues)
-        ]
+
+        def get_eval(args: tuple[Game, Clue | None]):
+            game, clue = args
+            return [safe(evaluate_clue, game, ClueCritiques(clue=clue, critiques=[])) if clue is not None else None]
+
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            evaluations = list(ex.map(get_eval, zip(games, clues)))
+
         if critique_trainer is not None:
             for es in evaluations:
                 for _ in range(critique_trainer.args.rloo_k - 1):
@@ -261,6 +276,9 @@ def main(overseer: OverSeer):
                 pass
 
         oversights = [[overseer.oversee(e) if e is not None else None for e in es] for es in evaluations]
+        reference_oversights = [
+            [reference_overseer.oversee(e) if e is not None else None for e in es] for es in evaluations
+        ]
         mean_true_score = sum(es[0].score for es in evaluations if es[0] is not None) / (
             len([es for es in evaluations if es[0] is not None]) or 1
         )
@@ -270,13 +288,15 @@ def main(overseer: OverSeer):
         )
         logger.info(f"Mean expected score: {mean_expected_score:.3f}")
         mistakes = sum(
-            is_mistake(o.model_dump() | {"evaluation": e})
-            for os, es in zip(oversights, evaluations)
-            for o, e in zip(os, es)
-            if o is not None
+            min(expected_scores) != min(reference_expected_scores)
+            for os, ros in zip(oversights, reference_oversights)
+            if (expected_scores := [o.expected_score for o in os if o is not None])
+            and (reference_expected_scores := [ro.expected_score for ro in ros if ro is not None])
         )
-        mistake_rate = mistakes / (len([o for os in oversights for o in os if o is not None]) or 1)
+        mistake_rate = mistakes / (len([os for os in oversights if any(o is not None for o in os)]) or 1)
         logger.info(f"Mistake rate: {mistake_rate:.3f}")
+        total_comparisons += sum(o.comparisons_performed for os in oversights for o in os if o is not None)
+        logger.info(f"Total comparisons: {total_comparisons}")
 
         calibrate_p = approximate_calibrate_p([o for os in oversights for o in os], len(games[0].good_words))
         logger.info(f"Calibrate p: {calibrate_p:.3f}")
@@ -284,14 +304,15 @@ def main(overseer: OverSeer):
             [
                 min(
                     [
-                        overseer.reward(g, o, CLUER_KL_COEFF, calibrate_p) - ADVERSARIAL_ALPHA * o.ground_truth_score
-                        if o is not None
+                        (1 + ADVERSARIAL_ALPHA) * overseer.reward(g, o, CLUER_KL_COEFF, calibrate_p)
+                        - ADVERSARIAL_ALPHA * reference_overseer.reward(g, ro, CLUER_KL_COEFF, calibrate_p)
+                        if o is not None and ro is not None
                         # TODO: not sure what to put here, this is just to get it to learn the clue whitelist
                         else -3.0
-                        for o in os
+                        for o, ro in zip(os, ros)
                     ]
                 )
-                for g, os in zip(games, oversights)
+                for g, os, ros in zip(games, oversights, reference_oversights)
             ]
         )
         mean_reward = torch.mean(rewards)
@@ -340,6 +361,7 @@ def main(overseer: OverSeer):
                 "oversight/mean_true_score": mean_true_score,
                 "oversight/mean_expected_score": mean_expected_score,
                 "oversight/mistake_rate": mistake_rate,
+                "oversight/total_comparisons": total_comparisons,
             },
         )
         for g, os in zip(games, oversights):
@@ -352,11 +374,19 @@ def main(overseer: OverSeer):
                         adversarial_alpha=ADVERSARIAL_ALPHA,
                     )
                     print(p_set.model_dump_json())
+        assert config.num_updates is not None
+        if ((batch * 12) % config.num_updates) == 0 and ((config.num_updates - 1) > batch > 0):
+            model.save_pretrained(
+                OUTPUT_DIR, selected_adapters=["cluer", "critiquer"] if critique_trainer is not None else ["cluer"]
+            )
+            (Path(OUTPUT_DIR) / "batch-number.txt").write_text(str(batch))
 
     cluer_trainer.end_train()
     if critique_trainer is not None:
         critique_trainer.end_train()
-    model.save_pretrained(OUTPUT_DIR)  # this should save all adapters
+    model.save_pretrained(
+        OUTPUT_DIR, selected_adapters=["cluer", "critiquer"] if critique_trainer is not None else ["cluer"]
+    )
 
 
 def load_game_dataset(dataset_file: str, tokenizer: PreTrainedTokenizer) -> Dataset:
@@ -368,7 +398,10 @@ def load_game_dataset(dataset_file: str, tokenizer: PreTrainedTokenizer) -> Data
     return dataset
 
 
-def safe[T](f: Callable[..., T], *args) -> T | None:
+T = TypeVar("T")
+
+
+def safe(f: Callable[..., T], *args) -> T | None:
     try:
         return f(*args)
     except Exception as e:
