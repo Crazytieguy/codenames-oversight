@@ -49,9 +49,16 @@ def main(dataset_files: list[Path], data_in: DataIn = DataIn.EVAL, num_steps: in
     pbar = tqdm(desc="Processing")
 
     for dataset_file in dataset_files:
+        total_lines = 0
+        if data_in == DataIn.TRAIN:
+            with dataset_file.open() as f:
+                total_lines = sum(1 for _ in f)
+
         super_batch = []
         overseer = None
         optimization_strength = None
+        max_batch_size = total_lines // num_steps if data_in == DataIn.TRAIN else float("inf")
+
         with dataset_file.open() as f:
             for line in f:
                 p_set = PreferenceSet.model_validate_json(line)
@@ -59,7 +66,10 @@ def main(dataset_files: list[Path], data_in: DataIn = DataIn.EVAL, num_steps: in
                     overseer = p_set.overseer
                     optimization_strength = p_set.optimization_strength
 
-                new_batch = (overseer, optimization_strength) != (p_set.overseer, p_set.optimization_strength)
+                new_batch = (overseer, optimization_strength) != (p_set.overseer, p_set.optimization_strength) or len(
+                    super_batch
+                ) >= max_batch_size
+
                 if new_batch:
                     batches = groupby(lambda p_set: p_set.adversarial_alpha, super_batch)
                     rows = [
