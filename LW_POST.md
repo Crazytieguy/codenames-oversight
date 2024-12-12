@@ -8,7 +8,7 @@ Scalable oversight is the challenge of overseeing or training AI systems to achi
 
 ### Our high level contributions
 
-To improve the odds of sandwiching results generalizing, We implement three new(ish) approaches:
+We identified several new approaches to sandwiching, and implemented them in a controlled and simplified setting as a proof-of-concept. Out hope is that our experiments can inform future scalable oversight research, helping with generalization to advanced AI:
 
 - **Incentivized reward hacking (link redwood post on meta-level-adversarial robustness)**
   
@@ -48,13 +48,15 @@ Each overseer is a python function that takes in the game and the model outputs,
 
 ![Consultancy Protocol](diagrams/consultancy-protocol.png)
 
-In the consultancy protocol, the model provides a list of words it's targetting with the clue, and the overseer just needs to decide whether they think all of the targets will be picked by the guesser. The target words are analogous to arguments defending the output, thus delegating argumentation work from the overseer to the model.This protocol covers for overseer laziness, because the overseer is not required to iterate over the good words.
+In the consultancy protocol, the model provides a list of words it's targetting with the clue, and the overseer just needs to decide whether they think all of the targets will be picked by the guesser. The target words are analogous to arguments defending the output, thus delegating argumentation work from the overseer to the model. This protocol covers for overseer laziness, because the overseer is not required to iterate over the good words.
 
 ![Critiques Protocol](diagrams/critiques-protocol.png)
 
 In the critiques protocol there is a second model that is trained in tandem with the first to give critiques (this bad word will be picked before this target). The overseer just needs to decide whether at least one critique is valid. This protocol covers for overseer negligence, because the overseer is not required to iterate over the bad words. This protocol is roughly equivalent to single-turn debate, (multi-turn debate wouldn't make sense in this setting).
 
-Note: Neither protocol covers for bias. Theoretically, if different overseers (people) are biased in different ways, using a distributed oversight protocol could help. But if people are biased in similar ways, the protocol would have to incentivize the model to _fix_ the overseer's bias, which seems like a tall order.
+Note: Neither protocol covers for bias. Theoretically, if different overseers (people) are biased in different ways, using a distributed oversight protocol could help. But if people are biased in similar ways, the protocol would have to incentivize the model to _fix_ the overseer's bias, which seems like a tall order. Thus we find it important to identify how humans are biased in their final judgements, while humans' flawed ability to come up with things to judge can be expected to be covered by scalable oversight techniques.
+
+TODO: further discussion of human flawes with examples.
 
 ### Reward function
 
@@ -89,14 +91,42 @@ We used a slightly modified version of the RLOO implementation from huggingface 
 
 ## Results
 
-### Adversarial Incentive
+### The Scalable Oversight Techniques Work, but Require More Compute
+
+Here are some plots showing true reward and overseer reward over training for the different protocols, with the robust overseer.
+
+![Base Robust Training](results/plots/base-robust-training.png)
+
+For the base protocol the two lines are the same - the robust overseer simply gives the true score. The score reaches 2.8 within ~53 training steps, and increases to ~3.29 by the end of the 336 training steps.
+
+![Consultancy Robust Training](results/plots/consultancy-robust-training.png)
+
+For consultancy the overseer estimated score is lower than the true score, due to the targets mechanism. The true score reaches 2.8 within ~238 steps, and increases to ~3.11 by the end of the 672 training steps.
+
+![Critiques Robust Training](results/plots/critiques-robust-training.png)
+
+For critiques the overseer estimated score starts out higher than the true score due to the random critiques, but quickly decreases to bellow the true score. The true score reaches 2.8 within ~290 steps, and reaches ~2.95 by the end of the 672 training steps. Note that a critique training step requires roughly 2x the compute as a consultancy training step, due to the additional model.
+
+#### Oversight Efficiency
+
+Although the scalable oversight techniques require more compute, they also require less oversight work per training step. Specifically, the base protocol with robust overseer used on average $8.96$ comparisons per clue, the consultancy protocol used $4.52$ comparisons, and the critiques protocol used $2.25$ comparisons. So the base and consultancy runs used roughly the same amount of oversight work, and the critiques runs used about half as much.
+
+### Adversarial Incentive Elicits Quite Reward Hacking
+
+TODO: explain the weird plot format
 
 ![Oracle Adversarial Strengths](plots/oracle-adversarial-strengths.png)
 
+The classical search (oracle) experiments show how much reward hacking we should expect from different amounts of optimization and adversarial incentive. Each colored line represents an optimization strength, each grey line represents and adversarial incentive strength, and each intersection represents a single experiment. As optimization strength increases, so does the distance between the overseer reward and true reward. Additionally, the policy is able to find worse outputs that don't decrease the overseer reward (the vertical sections).
+
 ![Base Adversarial Strengths](plots/base-adversarial-strengths.png)
+
+The base protocol experiments look like somewhere between optimization strength 8 and 16, except they seem somewhat biased in favor of the true reward, presumably due to some sort of inductive bias. An adversarial strength of 0.375 causes a ~0.65 reduction in true score while only causing a ~0.05 reduction in overseer score.
 
 ![Consultancy Adversarial Strengths](plots/consultancy-adversarial-strengths.png)
 
-### Oversight Efficiency and Alignment Tax
+Eliciting reward hacking under the consultancy (and critiques) protocol was much harder, requiring a stronger flaw and a greater adversarial incentive, suggesting an even stronger inductive bias in favor of the true goal. An adversarial strength of 0.75 causes a ~0.2 reduction in reference overseer score while causing a ~0.05 reduction in overseer score. Note - these numbers are not directly comparable to the oracle and base protocol numbers, due to the consultancy overseer underestimating the score.
+
+### Scalable Oversight Covers for Overseer Flaws
 
 ### Qualitative Policy Analysis
