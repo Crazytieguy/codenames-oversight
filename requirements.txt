@@ -16,3 +16,5 @@ pandas
 backoff
 outlines
 matplotlib
+python-dotenv
+ipykernel

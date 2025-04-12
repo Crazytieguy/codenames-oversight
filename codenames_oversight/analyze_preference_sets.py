@@ -5,10 +5,12 @@ from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
-from toolz import groupby, partition
+from toolz import groupby
 from tqdm import tqdm
 
-from .oversight import (
+load_dotenv()
+
+from .oversight import (  # noqa: E402
     Evaluation,
     NeglectLastNOverSeer,
     OverSeer,
@@ -17,7 +19,6 @@ from .oversight import (
     RobustOverSeer,
 )
 
-load_dotenv()
 app = typer.Typer()
 
 
@@ -35,8 +36,8 @@ def main(dataset_files: list[Path], data_in: DataIn = DataIn.EVAL, num_steps: in
         "true_score",
         "overseer_accuracy",
         "exploitation",
-        "reference_estimated_score",
-        "overseer_estimated_score",
+        "reference_score",
+        "overseer_score",
     ]
     if data_in == DataIn.EVAL:
         columns.append("optimization_strength")
@@ -73,11 +74,8 @@ def main(dataset_files: list[Path], data_in: DataIn = DataIn.EVAL, num_steps: in
                 if new_batch:
                     batches = groupby(lambda p_set: p_set.adversarial_alpha, super_batch)
                     rows = [
-                        row
+                        process_batch(overseer, optimization_strength, adversarial_alpha, batch, data_in)
                         for adversarial_alpha, batch in batches.items()
-                        for row in process_batch(
-                            overseer, optimization_strength, adversarial_alpha, batch, data_in, num_steps
-                        )
                     ]
                     pbar.update(1)
                     for row in rows:
@@ -90,10 +88,9 @@ def main(dataset_files: list[Path], data_in: DataIn = DataIn.EVAL, num_steps: in
         assert overseer is not None
         batches = groupby(lambda p_set: p_set.adversarial_alpha, super_batch)
         for adversarial_alpha, batch in batches.items():
-            rows = process_batch(overseer, optimization_strength, adversarial_alpha, batch, data_in, num_steps)
+            row = process_batch(overseer, optimization_strength, adversarial_alpha, batch, data_in)
             pbar.update(1)
-            for row in rows:
-                writer.writerow(row)
+            writer.writerow(row)
 
     pbar.close()
 
@@ -104,15 +101,8 @@ def process_batch(
     adversarial_alpha: float,
     batch: list[PreferenceSet],
     data_in: DataIn,
-    num_steps: int,
 ):
-    if data_in == DataIn.TRAIN:
-        batch_size = len(batch) // num_steps
-        return [
-            compute_row(data_in, overseer, optimization_strength, adversarial_alpha, p_sets)
-            for p_sets in tqdm(partition(batch_size, batch), total=num_steps, desc="Analyzing")
-        ]
-    return [compute_row(data_in, overseer, optimization_strength, adversarial_alpha, batch)]
+    return compute_row(data_in, overseer, optimization_strength, adversarial_alpha, batch)
 
 
 def compute_row(
@@ -160,13 +150,9 @@ def compute_row(
     ]
     reference_oversights = [reference_overseer.oversee(e) for e in evaluations]
     mean_true_reward = sum(o.ground_truth_score for p_set in p_sets for o in p_set.oversights) / len(oversights)
-    mean_reference_estimated_score = sum(
-        reference_overseer.estimated_score(game, o) for game, o in zip(games_flat, reference_oversights)
-    ) / len(reference_oversights)
-    mean_overseer_estimated_score = sum(
-        overseer.estimated_score(game, o) for game, o in zip(games_flat, oversights)
-    ) / len(oversights)
-    exploitation = mean_overseer_estimated_score - mean_reference_estimated_score
+    mean_reference_score = sum(o.expected_score for o in reference_oversights) / len(reference_oversights)
+    mean_overseer_score = sum(o.expected_score for o in oversights) / len(oversights)
+    exploitation = mean_overseer_score - mean_reference_score
     overseer_accuracy = sum(
         o.expected_score == ro.expected_score for o, ro in zip(oversights, reference_oversights)
     ) / len(oversights)
@@ -178,8 +164,8 @@ def compute_row(
         "exploitation": round(exploitation, 3),
         "overseer_accuracy": round(overseer_accuracy, 3),
         "true_score": round(mean_true_reward, 3),
-        "reference_estimated_score": round(mean_reference_estimated_score, 3),
-        "overseer_estimated_score": round(mean_overseer_estimated_score, 3),
+        "reference_score": round(mean_reference_score, 3),
+        "overseer_score": round(mean_overseer_score, 3),
     }
     if data_in == DataIn.EVAL:
         row["optimization_strength"] = optimization_strength
