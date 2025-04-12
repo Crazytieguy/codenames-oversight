@@ -3,12 +3,7 @@ import { getCollection, getEntry } from "astro:content";
 import Layout from "../../../layouts/Layout.astro";
 
 export async function getStaticPaths() {
-  const collections = [
-    "negligent-biased",
-    "negligent-biased-base",
-    "negligent-biased-base-extra",
-    "negligent-biased-judge",
-  ] as const;
+  const collections = ["base", "consultancy", "critiques"] as const;
 
   const entriesPromises = collections.map((collection) =>
     getCollection(collection)
@@ -40,8 +35,16 @@ const preferenceSet = entry!.data[idx];
 
 const clueCritiques = preferenceSet.oversights[0].clue_critiques;
 const clue = clueCritiques.clue.clue;
-const targets = clueCritiques.clue.targets;
-const critiques = clueCritiques.critiques;
+const targets = collection === "base" ? [] : clueCritiques.clue.targets;
+// Deduplicate critiques based on bad_word and target_good_word combinations
+const critiques = Array.from(
+  new Map(
+    clueCritiques.critiques.map((critique) => [
+      `${critique.bad_word}-${critique.target_good_word}`,
+      critique,
+    ])
+  ).values()
+);
 const guesses = Object.entries(
   preferenceSet.oversights[0].ground_truth_similarities
 )
@@ -51,78 +54,194 @@ const trueScore = preferenceSet.oversights[0].ground_truth_score;
 const expectedScore = preferenceSet.oversights[0].expected_score;
 const nextIdx = Number(idx) + 1;
 const prevIdx = Number(idx) - 1;
+
+const [overseer, , adv] = page.split("-");
+
+const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
 ---
 
 <Layout title="CodeNames Results Explorer">
   <main class="container">
-    <section>
-      <h1>CodeNames Results Explorer</h1>
-      <h2>{collection}</h2>
-      <h3>{page}</h3>
-    </section>
+    <h1>
+      {capitalize(collection)} protocol, {capitalize(overseer)} overseer, α={
+        adv.replace("0", "0.")
+      }
+    </h1>
+
+    <nav>
+      <ul>
+        {
+          prevIdx >= 0 && (
+            <li>
+              <a
+                role="button"
+                class="outline"
+                href={`/${collection}/${page}/${prevIdx}`}
+              >
+                ← Previous
+              </a>
+            </li>
+          )
+        }
+        <li>
+          <a role="button" href={`/${collection}/${page}/${nextIdx}`}>
+            Next →
+          </a>
+        </li>
+      </ul>
+    </nav>
+
     <article>
-      <nav>
-        <ul>
-          {
-            prevIdx >= 0 && (
-              <li>
-                <a href={`/${collection}/${page}/${prevIdx}`}>Previous</a>
-              </li>
-            )
-          }
-          {(<a href={`/${collection}/${page}/${nextIdx}`}>Next</a>)}
-        </ul>
-      </nav>
-      <h4>Good words</h4>
-      <ul class="grid words">
-        {preferenceSet.game.good_words.map((word) => <li>{word}</li>)}
-      </ul>
-      <h4>Bad words</h4>
-      <ul class="grid words">
-        {preferenceSet.game.bad_words.map((word) => <li>{word}</li>)}
-      </ul>
-      <h4>Clue: <em>{clue}</em></h4>
+      <header>
+        <h3>Game Words</h3>
+        <div>
+          <div class="word-grid">
+            {
+              preferenceSet.game.good_words.map((word) => (
+                <div class="word-card good">{word}</div>
+              ))
+            }
+          </div>
+        </div>
+
+        <div>
+          <div class="word-grid">
+            {
+              preferenceSet.game.bad_words.map((word) => (
+                <div class="word-card bad">{word}</div>
+              ))
+            }
+          </div>
+        </div>
+      </header>
+
+      <section>
+        <h3>Clue</h3>
+        <div class="word-card clue">{clue}</div>
+      </section>
+
       {
         targets.length > 0 && (
-          <>
-            <h4>Targets</h4>{" "}
-            <ul class="grid words">
-              {targets.map((target) => (
-                <li>{target}</li>
-              ))}
-            </ul>
-          </>
+          <section>
+            <div class="targets-container">
+              <h3>Targets</h3>
+              <div class="word-grid">
+                {targets.map((target) => (
+                  <div class="word-card good">{target}</div>
+                ))}
+              </div>
+            </div>
+          </section>
         )
       }
+
       {
         critiques.length > 0 && (
-          <>
-            <h4>Critiques</h4>
-            <ul class="grid">
+          <section>
+            <h3>Critiques</h3>
+            <ul class="critique-list">
               {critiques.map((critique) => (
-                <li>
-                  {critique.bad_word} &gt; {critique.target_good_word}
+                <li class="critique-item">
+                  <div class="word-card bad">{critique.bad_word}</div>
+                  &gt;
+                  <div class="word-card good">{critique.target_good_word}</div>
                 </li>
               ))}
             </ul>
-          </>
+          </section>
         )
       }
-      <h4>Guesses</h4>
-      <ol>
-        {guesses.map(([word, similarity]) => <li>{word}</li>)}
-      </ol>
-      <h4>True score: {trueScore}</h4>
-      <h4>Expected score: {expectedScore}</h4>
+
+      <section class="guesses-section">
+        <h3>Guesses</h3>
+        <div class="guesses-flow">
+          {
+            guesses.map(([word], index) => (
+              <>
+                <div class={`word-card ${index < trueScore ? "good" : "bad"}`}>
+                  {word}
+                </div>
+                {index < guesses.length - 1 && <span>→</span>}
+              </>
+            ))
+          }
+        </div>
+      </section>
+
+      <footer class="scores-section">
+        <div class="grid">
+          <div class="score-card">
+            <h4>True score</h4>
+            <div class="score-value">{trueScore}</div>
+          </div>
+          <div class="score-card">
+            <h4>Expected score</h4>
+            <div class="score-value">{expectedScore}</div>
+          </div>
+        </div>
+      </footer>
     </article>
   </main>
-</Layout>
 
-<style>
-  .words {
-    grid-template-columns: repeat(6, 1fr);
-  }
-  .grid li {
-    list-style: none;
-  }
-</style>
+  <style>
+    :root {
+      --bittersweet: #f25f5cff;
+      --cerulean: #247ba0ff;
+      --russian-violet: #3d2b56ff;
+    }
+
+    .word-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+
+    .word-card {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem 0.5rem;
+      border-radius: 0.25rem;
+      text-align: center;
+      font-weight: 600;
+      min-height: 3rem;
+    }
+
+    .word-card.good {
+      background-color: var(--cerulean);
+      color: white;
+    }
+
+    .word-card.bad {
+      background-color: var(--bittersweet);
+      color: white;
+    }
+
+    .guesses-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 1rem 0;
+    }
+
+    .word-card.clue {
+      background: var(--russian-violet);
+      color: white;
+      display: inline-block;
+    }
+
+    .critique-list {
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .critique-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+</Layout>

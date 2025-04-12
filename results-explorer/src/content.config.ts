@@ -1,6 +1,6 @@
+import { glob } from "astro/loaders";
 import { defineCollection, z } from "astro:content";
 
-// Define base schemas
 const critiqueSchema = z.object({
   bad_word: z.string(),
   target_good_word: z.string(),
@@ -22,14 +22,12 @@ const oversightSchema = z.object({
   deciding_critique: critiqueSchema.nullable(),
 });
 
-// Define overseer name as an enum
 const overseerNameSchema = z.enum([
+  "negligent_biased_base",
   "negligent_biased",
   "negligent_biased_judge",
-  "negligent_biased_base",
 ]);
 
-// Define common overseer parameters
 const overseerSchema = z.object({
   name: overseerNameSchema,
   neglect_words: z.number().int().nonnegative(),
@@ -39,7 +37,6 @@ const overseerSchema = z.object({
   neglect_good_words: z.number().int().nonnegative(),
 });
 
-// Define the PreferenceSet schema
 const preferenceSetSchema = z.object({
   game: z.object({
     good_words: z.array(z.string()),
@@ -51,31 +48,34 @@ const preferenceSetSchema = z.object({
   optimization_strength: z.number().int().positive().optional(),
 });
 
-// Define collections
-const negligentBiasedCollection = defineCollection({
-  type: "data",
-  schema: z.array(preferenceSetSchema),
+const schema = z.array(preferenceSetSchema);
+
+const consultancy = defineCollection({
+  loader: glob({
+    pattern: "*.json",
+    base: "./src/content/consultancy",
+  }),
+  schema,
 });
 
-const negligentBiasedBaseCollection = defineCollection({
-  type: "data",
-  schema: z.array(preferenceSetSchema),
+const critiques = defineCollection({
+  loader: glob({
+    pattern: "*.json",
+    base: "./src/content/critiques",
+  }),
+  schema,
 });
 
-const negligentBiasedBaseExtraCollection = defineCollection({
-  type: "data",
-  schema: z.array(preferenceSetSchema),
+const base = defineCollection({
+  loader: glob({
+    pattern: "*.json",
+    base: "./src/content/base",
+  }),
+  schema,
 });
 
-const negligentBiasedJudgeCollection = defineCollection({
-  type: "data",
-  schema: z.array(preferenceSetSchema),
-});
-
-// Export collections
 export const collections = {
-  "negligent-biased": negligentBiasedCollection,
-  "negligent-biased-base": negligentBiasedBaseCollection,
-  "negligent-biased-base-extra": negligentBiasedBaseExtraCollection,
-  "negligent-biased-judge": negligentBiasedJudgeCollection,
+  consultancy,
+  critiques,
+  base,
 };
