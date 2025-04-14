@@ -48,30 +48,28 @@ const preferenceSetSchema = z.object({
   optimization_strength: z.number().int().positive().optional(),
 });
 
-const schema = z.array(preferenceSetSchema);
-
 const consultancy = defineCollection({
   loader: glob({
-    pattern: "*.json",
+    pattern: "**/*.json",
     base: "./src/content/consultancy",
   }),
-  schema,
+  schema: preferenceSetSchema,
 });
 
 const critiques = defineCollection({
   loader: glob({
-    pattern: "*.json",
+    pattern: "**/*.json",
     base: "./src/content/critiques",
   }),
-  schema,
+  schema: preferenceSetSchema,
 });
 
 const base = defineCollection({
   loader: glob({
-    pattern: "*.json",
+    pattern: "**/*.json",
     base: "./src/content/base",
   }),
-  schema,
+  schema: preferenceSetSchema,
 });
 
 export const collections = {
