@@ -1,6 +1,6 @@
 ---
 import Layout from "@layouts/Layout.astro";
-import { getCollection, getEntry } from "astro:content";
+import { getCollection } from "astro:content";
 
 export async function getStaticPaths() {
   const collections = ["base", "consultancy", "critiques"] as const;
@@ -14,37 +14,37 @@ export async function getStaticPaths() {
   return collections.flatMap((collection, index) =>
     entries[index].map((entry) => {
       const [folder, idx] = entry.id.split("/");
-      return { params: { collection, folder, idx } };
+      return { params: { collection, folder, idx }, props: { entry } };
     })
   );
 }
 
 const { collection, folder, idx } = Astro.params;
-const entry = await getEntry(collection, `${folder}/${idx}`);
-if (!entry) {
-  throw new Error(`Entry not found: ${collection}/${folder}/${idx}`);
-}
+const entry = Astro.props.entry;
 const preferenceSet = entry.data;
 
-const clueCritiques = preferenceSet.oversights[0].clue_critiques;
-const clue = clueCritiques.clue.clue;
-const targets = collection === "base" ? [] : clueCritiques.clue.targets;
+const oversight = preferenceSet.oversights.length
+  ? preferenceSet.oversights[0]
+  : undefined;
+const clueCritiques = oversight?.clue_critiques;
+const clue = clueCritiques?.clue.clue;
+const targets = collection === "base" ? [] : clueCritiques?.clue.targets;
 // Deduplicate critiques based on bad_word and target_good_word combinations
 const critiques = Array.from(
   new Map(
-    clueCritiques.critiques.map((critique) => [
+    clueCritiques?.critiques.map((critique) => [
       `${critique.bad_word}-${critique.target_good_word}`,
       critique,
     ])
   ).values()
 );
-const guesses = Object.entries(
-  preferenceSet.oversights[0].ground_truth_similarities
-)
-  .sort((a, b) => b[1] - a[1])
-  .slice(0, preferenceSet.oversights[0].ground_truth_score + 1);
-const trueScore = preferenceSet.oversights[0].ground_truth_score;
-const expectedScore = preferenceSet.oversights[0].expected_score;
+const guesses = oversight
+  ? Object.entries(oversight.ground_truth_similarities)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, oversight.ground_truth_score + 1)
+  : [];
+const trueScore = oversight?.ground_truth_score;
+const expectedScore = oversight?.expected_score;
 const nextIdx = Number(idx) + 1;
 const prevIdx = Number(idx) - 1;
 
@@ -84,7 +84,8 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
       </ul>
     </nav>
 
-    <article>
+    <h3 class={oversight ? "hidden" : ""}>Invalid sample</h3>
+    <article class={!oversight ? "hidden" : ""}>
       <header>
         <h3>Game Words</h3>
         <div>
@@ -114,7 +115,7 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
       </section>
 
       {
-        targets.length > 0 && (
+        targets && targets.length > 0 && (
           <section>
             <div class="targets-container">
               <h3>Targets</h3>
@@ -129,7 +130,7 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
       }
 
       {
-        critiques.length > 0 && (
+        critiques && critiques.length > 0 && (
           <section>
             <h3>Critiques</h3>
             <ul class="critique-list">
@@ -151,7 +152,11 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
           {
             guesses.map(([word], index) => (
               <>
-                <div class={`word-card ${index < trueScore ? "good" : "bad"}`}>
+                <div
+                  class={`word-card ${
+                    index < (trueScore ?? 0) ? "good" : "bad"
+                  }`}
+                >
                   {word}
                 </div>
                 {index < guesses.length - 1 && <span>→</span>}
@@ -181,6 +186,10 @@ const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
       --bittersweet: #f25f5cff;
       --cerulean: #247ba0ff;
       --russian-violet: #3d2b56ff;
+    }
+
+    .hidden {
+      display: none;
     }
 
     .word-grid {
