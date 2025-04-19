@@ -1,5 +1,5 @@
 ---
-import { getCollection } from "astro:content";
+import { ClientRouter } from "astro:transitions";
 
 interface Props {
   title: string;
@@ -7,24 +7,57 @@ interface Props {
 
 const { title } = Astro.props;
 
-const collections = [
-  "negligent-biased",
-  "negligent-biased-base",
-  "negligent-biased-base-extra",
-  "negligent-biased-judge",
-] as const;
-const entries = Object.fromEntries(
-  await Promise.all(
-    collections.map(async (collection) => [
-      collection,
-      await getCollection(collection),
-    ])
-  )
-);
+const folders = {
+  base: [
+    "biased-adv-0.0",
+    "biased-adv-0.75",
+    "lazy-adv-0.0",
+    "lazy-adv-0.75",
+    "negligent-adv-0.0",
+    "negligent-adv-0.75",
+    "robust-adv-0.0",
+    "robust-adv-0.75",
+    "weak-negligent-adv-0.0",
+    "weak-negligent-adv-0.125",
+    "weak-negligent-adv-0.25",
+    "weak-negligent-adv-0.375",
+    "weak-negligent-adv-0.5",
+    "weak-negligent-adv-0.625",
+    "weak-negligent-adv-0.75",
+  ],
+  consultancy: [
+    "biased-adv-0.0",
+    "biased-adv-0.15",
+    "biased-adv-0.3",
+    "biased-adv-0.75",
+    "biased-overweigh-adv-0",
+    "biased-overweigh-adv-0.15",
+    "biased-overweigh-adv-0.3",
+    "biased-overweigh-adv-0.45",
+    "biased-overweigh-adv-0.6",
+    "biased-overweigh-adv-0.75",
+    "negligent-adv-0.0",
+    "negligent-adv-0.15",
+    "negligent-adv-0.3",
+    "negligent-adv-0.45",
+    "negligent-adv-0.6",
+    "negligent-adv-0.75",
+    "robust-adv-0.0",
+    "robust-adv-0.15",
+    "robust-adv-0.3",
+    "robust-adv-0.75",
+  ],
+  critiques: [
+    "biased-adv-0.0",
+    "biased-adv-0.75",
+    "robust-adv-0.0",
+    "robust-adv-0.75",
+  ],
+} as const;
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" transition:animate="none">
   <head>
     <meta charset="UTF-8" />
     <meta name="description" content="Astro description" />
@@ -36,60 +69,39 @@ const entries = Object.fromEntries(
     />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+    <ClientRouter />
   </head>
   <body>
     <header class="container">
       <nav>
         <ul>
-          <li><a href="/">Home</a></li>
+          <li><a href="/">CodeNames Oversight Home</a></li>
         </ul>
         <ul>
-          <li>
-            <details class="dropdown">
-              <summary>Base</summary>
-              <ul>
-                {
-                  entries["negligent-biased-base"].map((entry) => (
-                    <li>
-                      <a href={`/negligent-biased-base/${entry.id}/0`}>
-                        {entry.id}
-                      </a>
-                    </li>
-                  ))
-                }
-              </ul>
-            </details>
-          </li>
-          <li>
-            <details class="dropdown">
-              <summary>Consultancy</summary>
-              <ul>
-                {
-                  entries["negligent-biased"].map((entry) => (
-                    <li>
-                      <a href={`/negligent-biased/${entry.id}/0`}>{entry.id}</a>
-                    </li>
-                  ))
-                }
-              </ul>
-            </details>
-          </li>
-          <li>
-            <details class="dropdown">
-              <summary>Critiques</summary>
-              <ul>
-                {
-                  entries["negligent-biased-judge"].map((entry) => (
-                    <li>
-                      <a href={`/negligent-biased-judge/${entry.id}/0`}>
-                        {entry.id}
-                      </a>
-                    </li>
-                  ))
-                }
-              </ul>
-            </details>
-          </li>
+          {
+            Object.keys(folders).map((collection) => (
+              <li>
+                <details class="dropdown">
+                  <summary>
+                    {collection.charAt(0).toUpperCase() + collection.slice(1)}
+                  </summary>
+                  <ul>
+                    {folders[collection as keyof typeof folders].map(
+                      (folder) => (
+                        <li>
+                          <a
+                            href={`/${collection}/${folder.replace(".", "")}/0`}
+                          >
+                            {folder}
+                          </a>
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </details>
+              </li>
+            ))
+          }
         </ul>
       </nav>
     </header>

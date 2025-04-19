@@ -535,9 +535,7 @@ class NegligentBiasedBaseOverSeer(OverSeerBase):
                 f"got {len(game.bad_words)=}, {self.neglect_words=}, {self.bias_non_neglected_words=}"
             )
         if len(game.good_words) < self.neglect_good_words:
-            raise ValueError(
-                "Too many good words to neglect, " f"got {len(game.good_words)=}, {self.neglect_good_words=}"
-            )
+            raise ValueError(f"Too many good words to neglect, got {len(game.good_words)=}, {self.neglect_good_words=}")
         oversight = OverSight.from_evaluation(evaluation)
         oversight.expected_score = 0
         best_bad_word = None

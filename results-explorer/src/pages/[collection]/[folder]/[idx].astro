@@ -1,0 +1,240 @@
+---
+import Layout from "@layouts/Layout.astro";
+import { getCollection, getEntry } from "astro:content";
+
+export async function getStaticPaths() {
+  const collections = ["base", "consultancy", "critiques"] as const;
+
+  const entriesPromises = collections.map((collection) =>
+    getCollection(collection)
+  );
+
+  const entries = await Promise.all(entriesPromises);
+
+  return collections.flatMap((collection, index) =>
+    entries[index].map((entry) => {
+      const [folder, idx] = entry.id.split("/");
+      return { params: { collection, folder, idx } };
+    })
+  );
+}
+
+const { collection, folder, idx } = Astro.params;
+const entry = await getEntry(collection, `${folder}/${idx}`);
+if (!entry) {
+  throw new Error(`Entry not found: ${collection}/${folder}/${idx}`);
+}
+const preferenceSet = entry.data;
+
+const clueCritiques = preferenceSet.oversights[0].clue_critiques;
+const clue = clueCritiques.clue.clue;
+const targets = collection === "base" ? [] : clueCritiques.clue.targets;
+// Deduplicate critiques based on bad_word and target_good_word combinations
+const critiques = Array.from(
+  new Map(
+    clueCritiques.critiques.map((critique) => [
+      `${critique.bad_word}-${critique.target_good_word}`,
+      critique,
+    ])
+  ).values()
+);
+const guesses = Object.entries(
+  preferenceSet.oversights[0].ground_truth_similarities
+)
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, preferenceSet.oversights[0].ground_truth_score + 1);
+const trueScore = preferenceSet.oversights[0].ground_truth_score;
+const expectedScore = preferenceSet.oversights[0].expected_score;
+const nextIdx = Number(idx) + 1;
+const prevIdx = Number(idx) - 1;
+
+const [overseer, , adv] = folder.split("-");
+
+const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
+---
+
+<Layout title="CodeNames Results Explorer">
+  <main class="container">
+    <h1>
+      {capitalize(collection)} protocol, {capitalize(overseer)} overseer, α={
+        adv.replace("0", "0.")
+      }
+    </h1>
+
+    <nav>
+      <ul>
+        {
+          prevIdx >= 0 && (
+            <li>
+              <a
+                role="button"
+                class="outline"
+                href={`/${collection}/${folder}/${prevIdx}`}
+              >
+                ← Previous
+              </a>
+            </li>
+          )
+        }
+        <li>
+          <a role="button" href={`/${collection}/${folder}/${nextIdx}`}>
+            Next →
+          </a>
+        </li>
+      </ul>
+    </nav>
+
+    <article>
+      <header>
+        <h3>Game Words</h3>
+        <div>
+          <div class="word-grid">
+            {
+              preferenceSet.game.good_words.map((word) => (
+                <div class="word-card good">{word}</div>
+              ))
+            }
+          </div>
+        </div>
+
+        <div>
+          <div class="word-grid">
+            {
+              preferenceSet.game.bad_words.map((word) => (
+                <div class="word-card bad">{word}</div>
+              ))
+            }
+          </div>
+        </div>
+      </header>
+
+      <section>
+        <h3>Clue</h3>
+        <div class="word-card clue">{clue}</div>
+      </section>
+
+      {
+        targets.length > 0 && (
+          <section>
+            <div class="targets-container">
+              <h3>Targets</h3>
+              <div class="word-grid">
+                {targets.map((target) => (
+                  <div class="word-card good">{target}</div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )
+      }
+
+      {
+        critiques.length > 0 && (
+          <section>
+            <h3>Critiques</h3>
+            <ul class="critique-list">
+              {critiques.map((critique) => (
+                <li class="critique-item">
+                  <div class="word-card bad">{critique.bad_word}</div>
+                  &gt;
+                  <div class="word-card good">{critique.target_good_word}</div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      }
+
+      <section class="guesses-section">
+        <h3>Guesses</h3>
+        <div class="guesses-flow">
+          {
+            guesses.map(([word], index) => (
+              <>
+                <div class={`word-card ${index < trueScore ? "good" : "bad"}`}>
+                  {word}
+                </div>
+                {index < guesses.length - 1 && <span>→</span>}
+              </>
+            ))
+          }
+        </div>
+      </section>
+
+      <footer class="scores-section">
+        <div class="grid">
+          <div class="score-card">
+            <h4>True score</h4>
+            <div class="score-value">{trueScore}</div>
+          </div>
+          <div class="score-card">
+            <h4>Expected score</h4>
+            <div class="score-value">{expectedScore}</div>
+          </div>
+        </div>
+      </footer>
+    </article>
+  </main>
+
+  <style>
+    :root {
+      --bittersweet: #f25f5cff;
+      --cerulean: #247ba0ff;
+      --russian-violet: #3d2b56ff;
+    }
+
+    .word-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+
+    .word-card {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem 0.5rem;
+      border-radius: 0.25rem;
+      text-align: center;
+      font-weight: 600;
+      min-height: 3rem;
+    }
+
+    .word-card.good {
+      background-color: var(--cerulean);
+      color: white;
+    }
+
+    .word-card.bad {
+      background-color: var(--bittersweet);
+      color: white;
+    }
+
+    .guesses-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 1rem 0;
+    }
+
+    .word-card.clue {
+      background: var(--russian-violet);
+      color: white;
+      display: inline-block;
+    }
+
+    .critique-list {
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .critique-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+</Layout>
