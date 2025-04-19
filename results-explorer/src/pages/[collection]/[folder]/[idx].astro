@@ -1,26 +1,28 @@
 ---
 import Layout from "@layouts/Layout.astro";
-import { getEntry } from "astro:content";
+import { getCollection } from "astro:content";
+
+export async function getStaticPaths() {
+  const collections = ["base", "consultancy", "critiques"] as const;
+
+  const result = [];
+
+  for (const collection of collections) {
+    const entries = await getCollection(collection);
+
+    const paths = entries.map((entry) => {
+      const [folder, idx] = entry.id.split("/");
+      return { params: { collection, folder, idx }, props: { entry } };
+    });
+
+    result.push(...paths);
+  }
+
+  return result;
+}
 
 const { collection, folder, idx } = Astro.params;
-
-if (!collection || !folder || !idx) {
-  return Astro.redirect("/404");
-}
-
-if (
-  collection !== "base" &&
-  collection !== "consultancy" &&
-  collection !== "critiques"
-) {
-  return Astro.redirect("/404");
-}
-
-const entry = await getEntry(collection, `${folder}/${idx}`);
-
-if (!entry) {
-  return Astro.redirect("/404");
-}
+const entry = Astro.props.entry;
 
 const preferenceSet = entry.data;
 
