@@ -1,4 +1,5 @@
 ---
+import SpeedInsights from "@vercel/speed-insights/astro";
 import { ClientRouter } from "astro:transitions";
 
 interface Props {
@@ -70,6 +71,7 @@ const folders = {
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <ClientRouter />
+    <SpeedInsights />
   </head>
   <body>
     <header class="container">
