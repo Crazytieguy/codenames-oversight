@@ -5,18 +5,20 @@ import { getCollection } from "astro:content";
 export async function getStaticPaths() {
   const collections = ["base", "consultancy", "critiques"] as const;
 
-  const entriesPromises = collections.map((collection) =>
-    getCollection(collection)
-  );
+  const result = [];
 
-  const entries = await Promise.all(entriesPromises);
+  for (const collection of collections) {
+    const entries = await getCollection(collection);
 
-  return collections.flatMap((collection, index) =>
-    entries[index].map((entry) => {
+    const paths = entries.map((entry) => {
       const [folder, idx] = entry.id.split("/");
       return { params: { collection, folder, idx }, props: { entry } };
-    })
-  );
+    });
+
+    result.push(...paths);
+  }
+
+  return result;
 }
 
 const { collection, folder, idx } = Astro.params;
