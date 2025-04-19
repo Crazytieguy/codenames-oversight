@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b1af77bed2c2e66206c0c8242803cbe1fea3c08db6c0880083e2369d35204cf8
-size 346
+{"game": {"good_words": ["BOW", "PLATE", "DATE", "BELT", "HORSESHOE", "TEACHER"], "bad_words": ["SERVER", "KNIGHT", "LOG", "HIMALAYAS"]}, "overseer": {"name": "negligent_biased", "neglect_words": 2, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.6}

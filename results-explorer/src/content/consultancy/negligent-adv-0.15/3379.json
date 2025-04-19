@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:730dd67da13d184b075397c80c704192576d21770c58150de84c7e148f7f55bd
-size 352
+{"game": {"good_words": ["FILE", "GOLD", "FILM", "COPPER", "LIMOUSINE", "CENTAUR"], "bad_words": ["LEPRECHAUN", "ROUND", "SNOWMAN", "CRANE"]}, "overseer": {"name": "negligent_biased", "neglect_words": 2, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.15}

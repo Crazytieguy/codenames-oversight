@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:acaac49725878e6364f1823f3fb2acb4b45375f5a234503c21d90412f70ab3e0
-size 341
+{"game": {"good_words": ["DRAFT", "RULER", "LONDON", "VET", "KEY", "NAIL"], "bad_words": ["ANTARCTICA", "BUGLE", "WORM", "TOOTH"]}, "overseer": {"name": "negligent_biased", "neglect_words": 0, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.15}

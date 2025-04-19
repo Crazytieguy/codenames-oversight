@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:749fc62ca1f15e4a5b8961cb8ffd7f0edc3591680233fc38eb12bd0ab90a2cce
-size 339
+{"game": {"good_words": ["DWARF", "CROSS", "AZTEC", "LIGHT", "MARCH", "LEMON"], "bad_words": ["SNOW", "ROBOT", "SERVER", "NUT"]}, "overseer": {"name": "negligent_biased", "neglect_words": 0, "bias_neglected_words": 0, "bias_non_neglected_words": 1, "bias_factor": 1.2, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.45}

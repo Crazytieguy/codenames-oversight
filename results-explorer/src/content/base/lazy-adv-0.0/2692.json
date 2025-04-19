@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:33b1b509a4eec09b2974438e161a55fa5c1b9bf28df5a81e567cdb3dc3cc2e59
-size 352
+{"game": {"good_words": ["HELICOPTER", "SCREEN", "ROME", "WAKE", "SOCK", "HOOD"], "bad_words": ["GREEN", "CRICKET", "SUPERHERO", "SHOE"]}, "overseer": {"name": "negligent_biased_base", "neglect_words": 0, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 2}, "oversights": [], "adversarial_alpha": 0.0}

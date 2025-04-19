@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d28bbaa377a9941249bbaa3cb53ecb12790afb8565c23f9cd6be0e8933d6f9e8
-size 346
+{"game": {"good_words": ["KEY", "PARACHUTE", "CAP", "STATE", "OLYMPUS", "MOUSE"], "bad_words": ["TEMPLE", "TOKYO", "POINT", "ROULETTE"]}, "overseer": {"name": "negligent_biased", "neglect_words": 0, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.0}

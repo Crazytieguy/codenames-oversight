@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e5237aaa74f2ed8e2bcf33f6d793d6f3eb04a04ff11c7ee19fff02792368e7e1
-size 343
+{"game": {"good_words": ["MARBLE", "WAR", "BEACH", "DRAGON", "WATCH", "CHICK"], "bad_words": ["NEEDLE", "BED", "AUSTRALIA", "COVER"]}, "overseer": {"name": "negligent_biased", "neglect_words": 2, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.3}

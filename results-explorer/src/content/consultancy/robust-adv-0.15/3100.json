@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:cb50284e4922670262fb7dda309232769e9e249a72568f13aacbc3ee47a386e3
-size 338
+{"game": {"good_words": ["SHOP", "BILL", "SNOWMAN", "TUBE", "TORCH", "TURKEY"], "bad_words": ["BAT", "NINJA", "NOTE", "DRESS"]}, "overseer": {"name": "negligent_biased", "neglect_words": 0, "bias_neglected_words": 0, "bias_non_neglected_words": 0, "bias_factor": 1.0, "neglect_good_words": 0}, "oversights": [], "adversarial_alpha": 0.15}
