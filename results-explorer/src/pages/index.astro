@@ -5,6 +5,36 @@ import Layout from "../layouts/Layout.astro";
 <Layout title="CodeNames Results Explorer">
   <main class="container">
     <h1>CodeNames Oversight Results Explorer</h1>
-    <p>Navigate to explore results!</p>
+    <p>
+      This is an interactive explorer for the research described in <a
+        href="https://www.lesswrong.com/posts/gHheKspmTAYqEagbT/evaluating-oversight-robustness-with-incentivized-reward"
+        target="_blank"
+        >Evaluating Oversight Robustness with Incentivized Reward Hacking</a
+      >.
+    </p>
+
+    <h2>How to Navigate</h2>
+    <p>
+      Use the navigation menu to explore results from three training protocols:
+    </p>
+    <ul>
+      <li><strong>Base</strong>: Basic protocol without assistance</li>
+      <li>
+        <strong>Consultancy</strong>: Protocol where model provides target
+        selection justification
+      </li>
+      <li>
+        <strong>Critiques</strong>: Protocol with critique-based oversight
+      </li>
+    </ul>
+    <p>
+      Each subfolder follows the naming pattern: <code
+        >[overseer-type]-adv-[incentive-strength]</code
+      >
+      <ul>
+        <li>Overseer types: robust, biased, negligent, lazy, etc.</li>
+        <li>Adversarial incentive: 0.0 (none) to 0.75 (strong)</li>
+      </ul>
+    </p>
   </main>
 </Layout>

@@ -1,5 +1,7 @@
 # CodeNames Oversight
 
+This repo contains the code for [Evaluating Oversight Robustness with Incentivized Reward Hacking](https://www.lesswrong.com/posts/gHheKspmTAYqEagbT/evaluating-oversight-robustness-with-incentivized-reward).
+
 [CodeNames](<https://en.wikipedia.org/wiki/Codenames_(board_game)>) is a party card game where players need to find creative word associations. It has some properties that make it compelling as a testbed for scalable oversight experiments:
 
 * It should be easy for language models to learn.
@@ -8,8 +10,6 @@
 * It's easy to simulate overseers with various kinds of flaws, or artificially limit the oversight budget.
 
 This project aims to expand on the theory of predicting whether a scalable oversight technique will robustly succeed for some problem domain and overseer, and then test out the theory with many small experiments.
-
-For more detail, see [the LW post draft](https://docs.google.com/document/d/1dz5FzrnJ5GjmkZijKg4-XUEunucinFMvbcFQHDdQ55U/edit?usp=sharing)
 
 ## Relevant background
 * [the original Debate paper](https://arxiv.org/abs/1805.00899)
